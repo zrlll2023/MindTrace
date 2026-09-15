@@ -1,13 +1,14 @@
 <template>
-  <div class="card" :class="{ low: entry.confidence < 0.7 }">
+  <div class="entry-card" :class="[kindClass(entry.kind), { low: entry.confidence < 0.7 }]">
     <div class="head">
-      <select v-model="entry.kind" class="kind" :disabled="locked">
-        <option v-for="(label, k) in KIND_LABELS" :key="k" :value="k">{{ label }}</option>
+      <span class="kind-dot" />
+      <select v-model="entry.kind" class="kind-select" :disabled="locked">
+        <option v-for="(label, k) in KIND_PLAIN" :key="k" :value="k">{{ label }}</option>
       </select>
-      <span class="conf" :title="`置信度 ${Math.round(entry.confidence * 100)}%`">
-        {{ Math.round(entry.confidence * 100) }}%
-      </span>
-      <button class="del" @click="$emit('remove')" :disabled="locked">删除</button>
+      <span class="conf">{{ Math.round(entry.confidence * 100) }}%</span>
+      <button class="del" type="button" title="删除" :disabled="locked" @click="$emit('remove')">
+        <Icon name="trash" :size="14" />
+      </button>
     </div>
     <textarea
       v-if="isTextual"
@@ -20,12 +21,15 @@
       <label>睡眠时长（小时）</label>
       <input v-model.number="hours" type="number" step="0.5" min="0" max="24" :disabled="locked" />
     </div>
+    <p v-if="entry.confidence < 0.7" class="low-note">置信度偏低，确认前建议核对</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ParsedEntry, KIND_LABELS, EntryKind } from '../../electron/types'
+import { ParsedEntry } from '../../electron/types'
+import { KIND_PLAIN, kindClass } from '../utils/kinds'
+import Icon from './Icon.vue'
 
 const props = defineProps<{ entry: ParsedEntry; locked?: boolean }>()
 defineEmits<{ remove: [] }>()
@@ -44,18 +48,40 @@ const hours = computed({
 </script>
 
 <style scoped>
-.card {
-  border: 1px solid #dfe3ea; border-radius: 10px; padding: 10px 12px; margin: 6px 0;
-  background: #fafbfc;
+.entry-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--kc, var(--border-strong));
+  border-radius: var(--r-md);
+  padding: 10px 13px;
+  margin: 7px 0;
+  background: var(--surface-2);
 }
-.card.low { border-color: #f0b429; background: #fffaf0; }
-.head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.kind { font-size: 13px; border: none; background: transparent; }
-.conf { font-size: 11px; color: #888; margin-left: auto; }
-.del { font-size: 12px; border: none; background: transparent; color: #d33; cursor: pointer; }
+.entry-card.low { border-left-color: var(--warn); background: var(--warn-weak); }
+
+.head { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.kind-select {
+  width: auto; padding: 0; border: none; background: transparent;
+  font-size: 13px; font-weight: 600; color: var(--kc, var(--text));
+  cursor: pointer;
+}
+.kind-select:focus { box-shadow: none; }
+.kind-select:disabled { cursor: default; opacity: 1; }
+.conf {
+  margin-left: auto; font-size: 11px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.del {
+  padding: 4px; border: none; background: transparent;
+  color: var(--text-3); cursor: pointer;
+}
+.del:hover:not(:disabled) { color: var(--danger); background: var(--danger-weak); }
+
 textarea, input {
-  width: 100%; box-sizing: border-box; border: 1px solid #e2e5ea; border-radius: 6px;
-  padding: 6px 8px; font-size: 13px; font-family: inherit; resize: vertical;
+  width: 100%; box-sizing: border-box;
+  border: 1px solid var(--border-strong); border-radius: var(--r);
+  padding: 6px 9px; font-size: 13px; font-family: inherit;
+  background: var(--surface); resize: vertical;
 }
-.kv label { display: block; font-size: 12px; color: #666; margin-bottom: 2px; }
+.kv label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 3px; }
+.low-note { margin: 7px 0 0; font-size: 11.5px; color: var(--warn); }
 </style>

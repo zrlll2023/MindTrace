@@ -1,9 +1,35 @@
 <template>
-  <div class="settings">
-    <h2>设置</h2>
-    <p class="hint">配置 AI 提供商。API Key 加密存储在本机（Windows DPAPI），永远不会明文落盘。</p>
+  <div class="settings page">
+    <div class="page-head">
+      <h1 class="page-title">设置</h1>
+      <p class="page-sub">AI 服务、外观与本地数据</p>
+    </div>
 
+    <!-- 外观 -->
     <div class="card">
+      <h3>外观</h3>
+      <p class="hint">「纸」适合白天阅读，「墨」适合夜间记录；默认跟随系统。</p>
+      <div class="theme-picker">
+        <button
+          v-for="opt in THEME_OPTIONS"
+          :key="opt.mode"
+          class="theme-opt"
+          :class="{ on: theme.mode === opt.mode }"
+          @click="theme.set(opt.mode)"
+        >
+          <span class="preview" :class="opt.mode">
+            <span class="p-side" /><span class="p-main"><i /><i /><i /></span>
+          </span>
+          <span class="t-name">{{ opt.name }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- AI 服务 -->
+    <div class="card">
+      <h3>AI 服务</h3>
+      <p class="hint">API Key 加密存储在本机（Windows DPAPI），永远不会明文落盘。</p>
+
       <div class="field">
         <label>提供商预设</label>
         <select v-model="presetId" @change="onPresetChange">
@@ -56,7 +82,7 @@
       </div>
 
       <div class="row">
-        <button :disabled="saving" @click="onSave">{{ saving ? '保存中…' : '保存设置' }}</button>
+        <button class="primary" :disabled="saving" @click="onSave">{{ saving ? '保存中…' : '保存设置' }}</button>
         <button class="secondary" :disabled="testing" @click="onTest">
           {{ testing ? '测试中…' : '测试连接' }}
         </button>
@@ -65,9 +91,12 @@
       <p v-if="store.message" :class="store.messageOk ? 'msg ok' : 'msg err'">{{ store.message }}</p>
     </div>
 
+    <!-- 语义搜索 -->
     <div class="card">
-      <h3>语义搜索（v2.5）</h3>
-      <p class="hint">按含义检索你的记录（如「情绪波动相关的记录」）。使用当前提供商的 Embedding 模型（需该服务支持，如 SiliconFlow / 智谱 / OpenAI / Ollama）。</p>
+      <h3>语义搜索</h3>
+      <p class="hint">
+        按含义检索你的记录（如「情绪波动相关的记录」）。使用当前提供商的 Embedding 模型（需该服务支持，如 SiliconFlow / 智谱 / OpenAI / Ollama）。
+      </p>
       <div class="field">
         <label class="checkbox">
           <input v-model="form.embeddingEnabled" type="checkbox" />
@@ -82,7 +111,7 @@
         <button class="secondary" :disabled="indexing" @click="onIndex">
           {{ indexing ? '索引中…' : `重建索引（已索引 ${indexedCount} 条）` }}
         </button>
-        <span v-if="indexMsg" :class="indexOk ? 'msg ok' : 'msg err'">{{ indexMsg }}</span>
+        <span v-if="indexMsg" :class="indexOk ? 'msg ok inline' : 'msg err inline'">{{ indexMsg }}</span>
       </div>
       <div class="field">
         <label class="checkbox">
@@ -92,26 +121,31 @@
       </div>
     </div>
 
+    <!-- 导入 -->
     <div class="card">
-      <h3>导入 AI 对话（v2）</h3>
+      <h3>导入 AI 对话</h3>
       <p class="hint">
         支持导入 ChatGPT / Claude 官方数据导出 ZIP（设置 → Data Controls → Export）。
         对话将按条目存入时间线（类型：对话），自动去重，可重复导入。
       </p>
       <button class="secondary" :disabled="importing" @click="onImport">
+        <Icon name="inbox" :size="15" />
         {{ importing ? '导入中…' : '选择导出 ZIP 并导入' }}
       </button>
       <p v-if="importMsg" :class="importOk ? 'msg ok' : 'msg err'">{{ importMsg }}</p>
     </div>
 
+    <!-- 数据 -->
     <div class="card">
       <h3>数据</h3>
       <p class="hint">所有数据存储在本地，只有 AI 分析文本会出网（可开启脱敏）。</p>
       <div class="field">
         <label>数据目录</label>
-        <code>{{ store.payload.dataDir || '…' }}</code>
+        <code class="path">{{ store.payload.dataDir || '…' }}</code>
       </div>
-      <button class="secondary" @click="store.openDataDir()">打开数据目录</button>
+      <button class="secondary" @click="store.openDataDir()">
+        <Icon name="folder" :size="15" />打开数据目录
+      </button>
     </div>
   </div>
 </template>
@@ -119,9 +153,18 @@
 <script setup lang="ts">
 import { onMounted, ref, reactive } from 'vue'
 import { useSettingsStore } from '../stores/settings'
+import { useThemeStore, ThemeMode } from '../stores/theme'
 import { AppSettings, DEFAULT_SETTINGS } from '../../electron/types'
+import Icon from '../components/Icon.vue'
+
+const THEME_OPTIONS: { mode: ThemeMode; name: string }[] = [
+  { mode: 'light', name: '纸 · 浅色' },
+  { mode: 'dark', name: '墨 · 深色' },
+  { mode: 'system', name: '跟随系统' }
+]
 
 const store = useSettingsStore()
+const theme = useThemeStore()
 const form = reactive<AppSettings>({ ...DEFAULT_SETTINGS })
 const presetId = ref('deepseek')
 const apiKey = ref('')
@@ -145,7 +188,6 @@ function onPresetChange(): void {
 }
 
 async function onFetchModels(): Promise<void> {
-  // 直接用表单草稿（含未保存的 Key）拉取，不再落库
   if (!form.baseUrl.trim()) {
     store.show('请先填写 Base URL', false)
     return
@@ -236,28 +278,42 @@ async function onImport(): Promise<void> {
 </script>
 
 <style scoped>
-.settings { max-width: 720px; margin: 0 auto; }
-.card { background: #fff; border-radius: 10px; padding: 20px 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-.field { margin-bottom: 14px; }
-label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
-label.checkbox { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #333; }
-input[type=text], input[type=password], input:not([type]), select {
-  width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #d0d3d8;
-  border-radius: 6px; font-size: 14px; background: #fafbfc;
+.settings { max-width: 720px; }
+.card > h3 { margin-bottom: 4px; }
+
+/* 主题选择 */
+.theme-picker { display: flex; gap: 12px; flex-wrap: wrap; }
+.theme-opt {
+  flex-direction: column; gap: 8px; padding: 8px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md);
+  background: var(--surface); color: var(--text-2);
 }
-input:focus, select:focus { outline: 2px solid #4f7cff33; border-color: #4f7cff; }
-.row { display: flex; gap: 8px; }
-.row input { flex: 1; }
-button {
-  padding: 8px 18px; border: none; border-radius: 6px; background: #4f7cff;
-  color: #fff; font-size: 14px; cursor: pointer;
+.theme-opt:hover { border-color: var(--text-3); }
+.theme-opt.on { border-color: var(--accent); background: var(--accent-weak); color: var(--accent-text); }
+.preview {
+  display: flex; width: 108px; height: 62px; overflow: hidden;
+  border-radius: var(--r-sm); border: 1px solid rgba(0, 0, 0, 0.12);
 }
-button.secondary { background: #eef1f5; color: #333; }
-button:disabled { opacity: .5; cursor: not-allowed; }
-.hint { font-size: 12px; color: #888; }
-code { font-size: 12px; color: #555; word-break: break-all; }
-.msg { margin-top: 10px; font-size: 13px; }
-.msg.ok { color: #0a8f4d; }
-.msg.err { color: #d33; }
-h3 { margin: 0 0 8px; font-size: 15px; }
+.preview .p-side { width: 26px; }
+.preview .p-main { flex: 1; padding: 9px 8px; display: flex; flex-direction: column; gap: 5px; }
+.preview .p-main i { display: block; height: 5px; border-radius: 2px; }
+.preview .p-main i:nth-child(1) { width: 70%; }
+.preview .p-main i:nth-child(2) { width: 90%; opacity: 0.55; }
+.preview .p-main i:nth-child(3) { width: 45%; opacity: 0.35; }
+.preview.light { background: #f6f5f2; }
+.preview.light .p-side { background: #ffffff; border-right: 1px solid #e4e1da; }
+.preview.light .p-main i { background: #5546d0; }
+.preview.dark { background: #0f1013; }
+.preview.dark .p-side { background: #17181c; border-right: 1px solid #26282e; }
+.preview.dark .p-main i { background: #a99bff; }
+.preview.system { background: linear-gradient(100deg, #f6f5f2 0 50%, #0f1013 50% 100%); }
+.preview.system .p-side { background: linear-gradient(180deg, #ffffff 0 50%, #17181c 50% 100%); border-right: 1px solid #9a9a9a; }
+.preview.system .p-main i { background: #8a7ee8; }
+.t-name { font-size: 12.5px; }
+
+.path {
+  display: block; font-size: 11.5px; color: var(--text-2);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 7px 10px; word-break: break-all;
+}
 </style>

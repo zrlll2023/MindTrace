@@ -25,15 +25,19 @@ MindTrace 是一款本地优先的个人生活记录与 AI 分析桌面应用。
 
 ## 快速开始
 
-### 方式一：使用项目内已有的免安装版
+### 方式一：双击启动器（推荐，始终最新版本）
 
-如果当前目录已经存在 `release/win-unpacked/MindTrace.exe`，双击根目录的 `启动MindTrace.bat`。启动器会直接打开免安装版，不创建额外的开发终端。
+双击根目录的 **`启动MindTrace.bat`**。
 
-也可以直接双击：
+启动器默认**从源码构建并运行**：先比对 `dist/` 与源码的修改时间，源码有更新就自动构建，然后启动 Electron。因此打开的永远是最新版本，不会因为 `release/` 里留着旧包而看到过期界面。
 
 ```text
-release\win-unpacked\MindTrace.exe
+启动MindTrace.bat            # 构建（如需）后启动，始终最新版
+启动MindTrace.bat --rebuild  # 强制重新构建
+启动MindTrace.bat --packaged # 打开 release/win-unpacked/MindTrace.exe（可能是旧版）
 ```
+
+> Mock AI 不再随启动器自动启动，需要时另开终端执行 `pnpm mock`。
 
 ### 方式二：从 GitHub 源码启动
 
@@ -47,7 +51,7 @@ pnpm install
 pnpm dev
 ```
 
-如果依赖已经安装，也可以双击 `启动MindTrace.bat`。当目录中没有免安装版时，启动器会检查 Node.js/pnpm，启动 Mock AI，然后在同一个控制台运行开发版。
+如果依赖已经安装，也可以双击 `启动MindTrace.bat`。启动器会检查 Node.js 与 `node_modules/electron`，必要时先构建，再启动应用。
 
 ### 方式三：构建 Windows 安装包
 
@@ -160,9 +164,13 @@ API Key：mock
 **变更**
 
 - 记录页改为“手动直录优先、AI 辅助可选”的双模式。
-- 更新全局 UI/UX 设计系统和记录、时间线页面样式。
+- UI/UX 重构为「纸 / 墨」双主题设计系统：统一设计 token，支持浅色、深色与跟随系统三种主题模式。
+- 侧边导航改用线性 SVG 图标与激活指示条，品牌区加入轨迹标识；设置页新增「外观」分区。
+- 时间线改为带日期节点的真轴线布局；记录类型改用语义色标识，不再依赖 emoji。
+- 报告正文改用衬线排版与统一 token；知识库、实验室、设置页样式收敛到设计系统。
+- 启动阶段由 `index.html` 内联脚本定主题，并同步原生窗口底色，消除深色主题下的首帧闪白。
+- 启动器改为默认从源码构建运行（新增 `scripts/check-stale.mjs` 检测产物是否过期），始终打开最新版本；`--packaged` 才打开打包版，不再自动启动 Mock AI。
 - 分析引擎与时间线接入混合搜索、分块结果和精排能力。
-- 启动器优先打开已有免安装版；源码模式合并开发终端并加强 Node/NVM 检查。
 
 **修复**
 

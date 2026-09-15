@@ -1,13 +1,19 @@
 <template>
-  <div class="reports">
+  <div class="page">
+    <div class="page-head">
+      <h1 class="page-title">报告</h1>
+      <p class="page-sub">AI 基于你的记录生成的日报与周报</p>
+    </div>
+
     <div class="topbar">
-      <div class="tabs">
-        <button :class="{ on: tab === 'daily' }" @click="switchTab('daily')">日报</button>
-        <button :class="{ on: tab === 'weekly' }" @click="switchTab('weekly')">周报</button>
+      <div class="seg-group">
+        <button :class="tab === 'daily' ? 'seg on' : 'seg'" @click="switchTab('daily')">日报</button>
+        <button :class="tab === 'weekly' ? 'seg on' : 'seg'" @click="switchTab('weekly')">周报</button>
       </div>
       <div class="actions">
         <input v-model="genDate" type="date" />
-        <button :disabled="generating" @click="generate">
+        <button class="primary" :disabled="generating" @click="generate">
+          <Icon name="sparkles" :size="15" />
           {{ generating ? '生成中…' : tab === 'daily' ? '生成该日日报' : '生成该周周报' }}
         </button>
       </div>
@@ -15,7 +21,8 @@
 
     <div class="body">
       <aside class="archive">
-        <div
+        <div class="section-label">{{ tab === 'daily' ? '日报存档' : '周报存档' }}</div>
+        <button
           v-for="r in archive"
           :key="r.id"
           class="arch-item"
@@ -23,20 +30,28 @@
           @click="select(r)"
         >
           {{ r.period }}
-        </div>
-        <div v-if="!archive.length" class="empty">还没有{{ tab === 'daily' ? '日报' : '周报' }}</div>
+        </button>
+        <div v-if="!archive.length" class="arch-empty">还没有{{ tab === 'daily' ? '日报' : '周报' }}</div>
       </aside>
 
-      <article class="viewer">
+      <article class="viewer card">
         <div v-if="current" class="viewer-head">
           <h2>{{ tab === 'daily' ? '日报' : '周报' }} · {{ current.period }}</h2>
-          <button class="export" @click="exportCurrent">导出 Markdown</button>
+          <button class="secondary small" @click="exportCurrent">
+            <Icon name="download" :size="14" />导出 Markdown
+          </button>
         </div>
-        <div v-if="current" class="md" v-html="rendered"></div>
-        <div v-else class="empty big">选择左侧报告查看</div>
-        <p v-if="toast" class="toast">{{ toast }}</p>
+        <div v-if="current" class="prose md" v-html="rendered" />
+        <div v-else class="empty">
+          <h3>还没有选中的报告</h3>
+          <p>选择左侧存档查看，或在上方选择一个日期生成。</p>
+        </div>
       </article>
     </div>
+
+    <transition name="toast">
+      <p v-if="toast" class="toast">{{ toast }}</p>
+    </transition>
   </div>
 </template>
 
@@ -44,6 +59,7 @@
 import { onMounted, ref, computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import Icon from '../components/Icon.vue'
 
 interface ReportRow {
   id: number
@@ -121,35 +137,53 @@ onMounted(() => void loadArchive())
 </script>
 
 <style scoped>
-.reports { display: flex; flex-direction: column; height: calc(100vh - 48px); }
-.topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.tabs button {
-  padding: 7px 20px; border: none; background: transparent; font-size: 14px; cursor: pointer;
-  border-bottom: 2px solid transparent; color: #666;
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
 }
-.tabs button.on { color: #4f7cff; border-bottom-color: #4f7cff; font-weight: 600; }
-.actions { display: flex; gap: 8px; align-items: center; }
-.actions input { border: 1px solid #d0d3d8; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
-.actions button {
-  padding: 7px 16px; border: none; border-radius: 8px; background: #4f7cff; color: #fff;
-  font-size: 13px; cursor: pointer;
-}
-.actions button:disabled { opacity: .5; }
-.body { display: flex; gap: 16px; flex: 1; min-height: 0; }
-.archive { width: 160px; overflow-y: auto; flex-shrink: 0; }
+.actions { display: flex; gap: 10px; align-items: center; }
+
+.body { display: flex; gap: 18px; flex: 1; min-height: 0; align-items: flex-start; }
+.archive { width: 168px; flex: 0 0 168px; }
 .arch-item {
-  padding: 9px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; color: #444;
-  margin-bottom: 4px; background: #fff;
+  display: block; width: 100%; text-align: left;
+  padding: 8px 12px; border-radius: var(--r); margin-bottom: 3px;
+  font-size: 13px; color: var(--text-2);
+  background: transparent; border: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
 }
-.arch-item.on { background: #4f7cff; color: #fff; }
-.viewer { flex: 1; background: #fff; border-radius: 12px; padding: 20px 26px; overflow-y: auto; }
-.viewer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.viewer-head h2 { font-size: 17px; margin: 0; }
-.export { padding: 6px 14px; border: 1px solid #d0d3d8; background: #fff; border-radius: 8px; font-size: 13px; cursor: pointer; }
-.md :deep(h2) { font-size: 16px; border-left: 3px solid #4f7cff; padding-left: 10px; margin: 18px 0 8px; }
-.md :deep(p), .md :deep(li) { font-size: 14px; line-height: 1.8; }
-.md :deep(blockquote) { border-left: 3px solid #e2e5ea; margin: 8px 0; padding: 2px 12px; color: #777; }
-.empty { color: #999; font-size: 13px; padding: 20px 8px; }
-.empty.big { margin-top: 40vh; text-align: center; }
-.toast { position: fixed; bottom: 20px; right: 20px; background: #1f2328; color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 13px; }
+.arch-item:hover { background: var(--surface-2); color: var(--text); }
+.arch-item.on {
+  background: var(--accent-weak); color: var(--accent-text); font-weight: 600;
+}
+.arch-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 12px; }
+
+.viewer {
+  flex: 1; min-width: 0; margin-bottom: 0;
+  max-height: calc(100vh - 210px); overflow-y: auto;
+}
+.viewer-head {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; margin-bottom: 14px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+.viewer-head h2 {
+  font-family: var(--font-sans); font-size: 16px; margin: 0;
+}
+.md :deep(h2:first-child) { margin-top: 0; }
+
+.toast {
+  position: fixed; bottom: 22px; right: 26px; margin: 0;
+  background: var(--text); color: var(--bg);
+  padding: 10px 16px; border-radius: var(--r); font-size: 13px;
+  box-shadow: var(--shadow-lg); z-index: 80;
+}
+.toast-enter-active, .toast-leave-active { transition: opacity 0.2s var(--ease), transform 0.2s var(--ease); }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(6px); }
+
+@media (max-width: 760px) {
+  .body { flex-direction: column; }
+  .archive { width: 100%; flex: none; display: flex; gap: 6px; overflow-x: auto; }
+  .arch-item { width: auto; white-space: nowrap; margin-bottom: 0; }
+}
 </style>

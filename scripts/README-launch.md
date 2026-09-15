@@ -1,15 +1,27 @@
 # MindTrace 打开方式
 
-## 方式一：一键启动（优先免安装版，必要时开发模式）
+## 方式一：一键启动（默认始终打开最新版本）
 
 双击项目根目录的 **`启动MindTrace.bat`**。
 
-启动器按以下顺序工作：
-1. 本机已有 `release/win-unpacked/MindTrace.exe` 时，直接打开免安装正式版，不启动额外的开发终端
-2. 没有正式版产物时，读取并校验 `node --version` 和 `pnpm --version` 的真实输出，再用当前启动器窗口运行 Mock AI 与开发版
-3. 两种方式都不可用时，保留错误窗口并显示需要执行的安装命令
+启动器**默认从源码构建并运行**，因此打开的永远是最新版本，不会因为 `release/` 里留着旧包而看到过期界面。
 
-> 开发模式只保留启动器自身的一个命令行窗口，并在其中显示错误；不会再为 Mock 和应用重复弹出多个终端。
+工作流程：
+1. 校验 Node.js 可用（`node --version` 有真实输出），并检查 `node_modules/electron` 是否已安装
+2. 用 `scripts/check-stale.mjs` 比对 `dist/` 与源码（`src/`、`electron/`、`index.html`、`vite.config.mts`、`package.json`）的修改时间
+   - 源码更新或 `dist/` 不存在 → 先构建（`pnpm build`；pnpm 不可用时自动退回直接调用本地 `vite` / `tsc`）
+   - 已是最新 → 跳过编译，直接启动
+3. 启动 Electron 加载 `dist/index.html`，随后启动器窗口自行关闭
+
+可用参数：
+
+| 参数 | 作用 |
+| --- | --- |
+| （无） | 构建（如需）+ 从源码启动，始终最新版 |
+| `--rebuild` | 强制重新构建后再启动 |
+| `--packaged` | 直接打开 `release/win-unpacked/MindTrace.exe`（**可能是旧版**） |
+
+> Mock AI 不再随启动器自动运行。需要时另开一个终端执行 `pnpm mock`。
 
 **仅开发模式使用 Mock AI 时，需在设置页配置一次**（之后永久记住）：
 - 提供商预设：选「自定义」
@@ -17,11 +29,12 @@
 - API Key：随便填，如 `mock`
 - 点「拉取模型列表」→ 选 `mock-chat` → 保存
 
-免安装正式版不会自动启动 Mock AI；需要 AI 功能时，请在设置页选择 DeepSeek 等真实提供商并填写对应 API Key。
+以 `--packaged` 打开免安装版时不会自动启动 Mock AI；需要 AI 功能时，请在设置页选择 DeepSeek 等真实提供商并填写对应 API Key。
 
-> 开发模式前提：Node.js 22.12+ 已安装并处于活动状态，且已安装 pnpm（Vite 8.3.0 要求 Node.js `^20.19.0 || >=22.12.0`）。仅能在 PATH 中找到 NVM shim 不代表 Node.js 可用；启动器也会隔离某些 NVM shim 对批处理标准输入的错误读取。
+> 前提：Node.js 22.12+ 已安装并处于活动状态（Vite 8.3.0 要求 Node.js `^20.19.0 || >=22.12.0`）。仅能在 PATH 中找到 NVM shim 不代表 Node.js 可用；启动器也会隔离某些 NVM shim 对批处理标准输入的错误读取。
+> 若 Node.js 不可用但存在免安装版，启动器会退回打开免安装版并提示其可能不是最新。
 
-> `release/` 已被 Git 忽略，GitHub 新克隆的项目不会包含免安装正式版；这种情况下必须先配置 Node.js/pnpm 并执行 `pnpm install`。
+> `release/` 已被 Git 忽略，GitHub 新克隆的项目不会包含免安装正式版；这种情况下必须先配置 Node.js 并执行 `pnpm install`（或 `npm install`）。
 
 ## 方式二：安装正式版（桌面图标，独立运行）
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, nativeTheme } from 'electron'
 import path from 'node:path'
 import { initContext } from './context'
 import { registerIpcHandlers } from './ipc/handlers'
@@ -10,6 +10,8 @@ async function createWindow() {
     width: 1200,
     height: 800,
     title: 'MindTrace',
+    // 与「纸 / 墨」主题的底色一致，避免深色下露出原生白底
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f1013' : '#f6f5f2',
     show: false, // 内容就绪后再显示，避免空白窗落在控制台后面
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

@@ -10,5 +10,5 @@ defineProps<{ title: string }>()
 </script>
 
 <style scoped>
-.placeholder { text-align: center; padding-top: 80px; color: #888; }
+.placeholder { text-align: center; padding-top: 80px; color: var(--text-3); }
 </style>
