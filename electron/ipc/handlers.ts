@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { getContext } from '../context'
 import { AppSettings, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues } from '../types'
 import { parseCaptureWith } from '../analysis/parser'
@@ -44,6 +44,24 @@ async function makeSemantic(c: ReturnType<typeof getContext>) {
 }
 
 export function registerIpcHandlers(): void {
+  const senderWindow = (event: Electron.IpcMainInvokeEvent) => BrowserWindow.fromWebContents(event.sender)
+  ipcMain.handle('window:minimize', event => {
+    senderWindow(event)?.minimize()
+    return { ok: true }
+  })
+  ipcMain.handle('window:toggleMaximize', event => {
+    const win = senderWindow(event)
+    if (!win) return { ok: false }
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+    return { ok: true, maximized: win.isMaximized() }
+  })
+  ipcMain.handle('window:close', event => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    win?.close()
+    return { ok: true }
+  })
+
   // ---------- settings ----------
   ipcMain.handle('settings:get', () => {
     const c = getContext()

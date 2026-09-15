@@ -64,7 +64,7 @@ pnpm dist
 构建完成后，安装包和免安装目录位于 `release/`：
 
 ```text
-release\MindTrace Setup 0.2.0.exe
+release\MindTrace Setup 0.3.0.exe
 release\win-unpacked\MindTrace.exe
 ```
 

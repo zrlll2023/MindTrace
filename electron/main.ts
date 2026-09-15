@@ -8,13 +8,15 @@ import fs from 'node:fs'
 import { dataLocationStatus } from './store/data-location'
 
 async function createWindow() {
+  const dark = nativeTheme.shouldUseDarkColors
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     title: 'MindTrace',
+    titleBarStyle: 'hidden',
     autoHideMenuBar: true,
     // 与「纸 / 墨」主题的底色一致，避免深色下露出原生白底
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f1013' : '#f6f5f2',
+    backgroundColor: dark ? '#0f1013' : '#f6f5f2',
     show: false, // 内容就绪后再显示，避免空白窗落在控制台后面
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

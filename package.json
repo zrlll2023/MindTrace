@@ -1,6 +1,6 @@
 {
   "name": "mindtrace",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MindTrace —— 本地优先的个人生活记录与 AI 分析桌面应用",
   "main": "dist-electron/main.js",
   "private": true,
@@ -18,6 +18,13 @@
   "build": {
     "appId": "com.zrlll2023.mindtrace",
     "productName": "MindTrace",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "zrlll2023",
+        "repo": "MindTrace"
+      }
+    ],
     "directories": {
       "output": "release"
     },
