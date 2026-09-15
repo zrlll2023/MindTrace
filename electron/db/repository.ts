@@ -12,6 +12,8 @@ export interface NewEntry {
   source: string
   /** 可选：显式指定所属日期（测试/导入用）；缺省取当天 */
   entry_date?: string
+  /** 可选：导入去重键（如 chatgpt:convId:msgIdx）；相同键不重复导入 */
+  dedup_key?: string
 }
 
 export interface Entry extends NewEntry {
@@ -78,16 +80,38 @@ export class Repo {
   // ---------- entries ----------
 
   async insertEntry(e: NewEntry): Promise<Entry> {
+    const cols = ['raw_text', 'kind', 'content', 'confidence', 'source']
+    const vals: (string | number)[] = [e.raw_text, e.kind, e.content, e.confidence, e.source]
+    if (e.entry_date) {
+      cols.push('entry_date')
+      vals.push(e.entry_date)
+    }
+    if (e.dedup_key) {
+      cols.push('dedup_key')
+      vals.push(e.dedup_key)
+    }
     this.db.run(
-      `INSERT INTO entries (raw_text, kind, content, confidence, source${e.entry_date ? ', entry_date' : ''})
-       VALUES (?, ?, ?, ?, ?${e.entry_date ? ', ?' : ''})`,
-      e.entry_date
-        ? [e.raw_text, e.kind, e.content, e.confidence, e.source, e.entry_date]
-        : [e.raw_text, e.kind, e.content, e.confidence, e.source]
+      `INSERT INTO entries (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+      vals
     )
     const id = this.lastId()
     const row = this.db.exec('SELECT * FROM entries WHERE id = ?', [id])[0]
     return this.rowToEntry(row)
+  }
+
+  /** 导入去重：返回已存在的 dedup_key 集合 */
+  async existingDedupKeys(keys: string[]): Promise<Set<string>> {
+    const found = new Set<string>()
+    for (let i = 0; i < keys.length; i += 500) {
+      const chunk = keys.slice(i, i + 500)
+      const placeholders = chunk.map(() => '?').join(',')
+      const res = this.db.exec(
+        `SELECT dedup_key FROM entries WHERE dedup_key IN (${placeholders})`,
+        chunk
+      )
+      if (res.length) for (const v of res[0].values) found.add(v[0] as string)
+    }
+    return found
   }
 
   async listEntries(filter: EntryFilter): Promise<Entry[]> {

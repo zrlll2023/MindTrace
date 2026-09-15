@@ -53,6 +53,18 @@
     </div>
 
     <div class="card">
+      <h3>导入 AI 对话（v2）</h3>
+      <p class="hint">
+        支持导入 ChatGPT / Claude 官方数据导出 ZIP（设置 → Data Controls → Export）。
+        对话将按条目存入时间线（类型：对话），自动去重，可重复导入。
+      </p>
+      <button class="secondary" :disabled="importing" @click="onImport">
+        {{ importing ? '导入中…' : '选择导出 ZIP 并导入' }}
+      </button>
+      <p v-if="importMsg" :class="importOk ? 'msg ok' : 'msg err'">{{ importMsg }}</p>
+    </div>
+
+    <div class="card">
       <h3>数据</h3>
       <p class="hint">所有数据存储在本地，只有 AI 分析文本会出网（可开启脱敏）。</p>
       <div class="field">
@@ -122,6 +134,27 @@ async function onTest(): Promise<void> {
     else store.show(`❌ 连接失败：${r.error}`, false)
   } finally {
     testing.value = false
+  }
+}
+
+const importing = ref(false)
+const importMsg = ref('')
+const importOk = ref(false)
+
+async function onImport(): Promise<void> {
+  importing.value = true
+  importMsg.value = ''
+  try {
+    const r = await window.api.import.exportZip()
+    if (r.ok && r.summary) {
+      importOk.value = true
+      importMsg.value = `✅ 导入完成：${r.summary.conversations} 个会话，新增 ${r.summary.imported} 条，跳过重复 ${r.summary.skipped} 条`
+    } else if (!r.canceled) {
+      importOk.value = false
+      importMsg.value = `❌ ${r.error || '导入失败'}`
+    }
+  } finally {
+    importing.value = false
   }
 }
 </script>

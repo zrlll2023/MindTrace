@@ -36,6 +36,9 @@ const api = {
   },
   backup: {
     run: () => ipcRenderer.invoke('backup:run')
+  },
+  import: {
+    exportZip: () => ipcRenderer.invoke('import:exportZip')
   }
 }
 

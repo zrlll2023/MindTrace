@@ -170,4 +170,26 @@ export function registerIpcHandlers(): void {
     const s = c.getSettings()
     return runBackup(c.dataDir, s.backupRetention ?? 30)
   })
+
+  // ---------- import（v2：AI 对话导入） ----------
+  ipcMain.handle('import:exportZip', async () => {
+    const c = getContext()
+    const { dialog } = await import('electron')
+    const r = await dialog.showOpenDialog({
+      title: '选择 AI 导出 ZIP',
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+      properties: ['openFile']
+    })
+    if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true } as never
+    try {
+      const fs = await import('node:fs')
+      const bytes = fs.readFileSync(r.filePaths[0])
+      const { parseExportZip, importConversations } = await import('../import/service.js')
+      const convs = parseExportZip(new Uint8Array(bytes))
+      const summary = await importConversations(c.repo, convs)
+      return { ok: true, summary } as never
+    } catch (e) {
+      return { ok: false, error: (e as Error).message } as never
+    }
+  })
 }

@@ -131,4 +131,12 @@ function migrate(db: Database): void {
       END;
     `)
   }
+
+  // 增量迁移：导入去重键（幂等）
+  const cols = db.exec("PRAGMA table_info(entries)")
+  const hasDedup = cols.length && cols[0].values.some(v => v[1] === 'dedup_key')
+  if (!hasDedup) {
+    db.exec('ALTER TABLE entries ADD COLUMN dedup_key TEXT')
+    db.exec('CREATE INDEX IF NOT EXISTS idx_entries_dedup ON entries(dedup_key)')
+  }
 }
