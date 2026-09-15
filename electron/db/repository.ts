@@ -10,6 +10,8 @@ export interface NewEntry {
   content: string
   confidence: number
   source: string
+  /** 可选：显式指定所属日期（测试/导入用）；缺省取当天 */
+  entry_date?: string
 }
 
 export interface Entry extends NewEntry {
@@ -77,9 +79,11 @@ export class Repo {
 
   async insertEntry(e: NewEntry): Promise<Entry> {
     this.db.run(
-      `INSERT INTO entries (raw_text, kind, content, confidence, source)
-       VALUES (?, ?, ?, ?, ?)`,
-      [e.raw_text, e.kind, e.content, e.confidence, e.source]
+      `INSERT INTO entries (raw_text, kind, content, confidence, source${e.entry_date ? ', entry_date' : ''})
+       VALUES (?, ?, ?, ?, ?${e.entry_date ? ', ?' : ''})`,
+      e.entry_date
+        ? [e.raw_text, e.kind, e.content, e.confidence, e.source, e.entry_date]
+        : [e.raw_text, e.kind, e.content, e.confidence, e.source]
     )
     const id = this.lastId()
     const row = this.db.exec('SELECT * FROM entries WHERE id = ?', [id])[0]

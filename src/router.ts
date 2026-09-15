@@ -18,9 +18,7 @@ export const routes: NavRoute[] = [
   {
     path: '/timeline',
     name: 'timeline',
-    // Task 5 之前临时复用占位组件
-    component: () => import('./views/PlaceholderView.vue'),
-    props: { title: '时间线' },
+    component: () => import('./views/TimelineView.vue'),
     meta: { nav: true, icon: '🗓️', label: '时间线' }
   },
   {

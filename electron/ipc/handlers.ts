@@ -3,6 +3,7 @@ import { getContext } from '../context'
 import { AppSettings, PROVIDER_PRESETS } from '../types'
 import { parseDumpWith } from '../analysis/parser'
 import { NewEntry } from '../db/repository'
+import { TimelineFilter } from '../types'
 
 export function registerIpcHandlers(): void {
   // ---------- settings ----------
@@ -91,4 +92,19 @@ export function registerIpcHandlers(): void {
       }
     }
   )
+
+  // ---------- timeline ----------
+  ipcMain.handle('timeline:list', (_e, filter: TimelineFilter) =>
+    getContext().repo.listEntries(filter)
+  )
+  ipcMain.handle('timeline:search', (_e, keyword: string) =>
+    getContext().repo.searchEntries(keyword)
+  )
+  ipcMain.handle('timeline:get', (_e, id: number) => getContext().repo.getEntry(id))
+  ipcMain.handle('timeline:updateContent', (_e, id: number, content: object) => {
+    const c = getContext()
+    c.repo.updateEntryContent(id, JSON.stringify(content))
+    c.repo.save()
+    return { ok: true }
+  })
 }

@@ -15,6 +15,13 @@ const api = {
   capture: {
     parse: (raw: string) => ipcRenderer.invoke('capture:parse', raw),
     commit: (raw: string, entries: unknown[]) => ipcRenderer.invoke('capture:commit', raw, entries)
+  },
+  timeline: {
+    list: (filter: unknown) => ipcRenderer.invoke('timeline:list', filter),
+    search: (keyword: string) => ipcRenderer.invoke('timeline:search', keyword),
+    get: (id: number) => ipcRenderer.invoke('timeline:get', id),
+    updateContent: (id: number, content: unknown) =>
+      ipcRenderer.invoke('timeline:updateContent', id, content)
   }
 }
 
