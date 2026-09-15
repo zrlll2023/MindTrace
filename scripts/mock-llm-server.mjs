@@ -184,6 +184,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 3) 周报请求（system 含"周报"）
+    if (sys.includes('研究向导')) {
+      return json(res, openAIFormat(JSON.stringify({
+        queries: ['RAG 评估 最新方法', '个人知识管理 工具对比', '睡眠与情绪 管理'],
+        note: '（Mock）基于你近期的想法与兴趣线生成的研究方向。'
+      })))
+    }
     if (sys.includes('周报')) {
       const md = [
         '## 一周概况',

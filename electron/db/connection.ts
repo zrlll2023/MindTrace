@@ -139,4 +139,13 @@ function migrate(db: Database): void {
     db.exec('ALTER TABLE entries ADD COLUMN dedup_key TEXT')
     db.exec('CREATE INDEX IF NOT EXISTS idx_entries_dedup ON entries(dedup_key)')
   }
+
+  // 增量迁移：语义搜索向量表（v2.5，幂等）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vectors (
+      entry_id INTEGER PRIMARY KEY,
+      content_hash TEXT NOT NULL,
+      embedding TEXT NOT NULL
+    );
+  `)
 }

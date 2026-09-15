@@ -30,9 +30,21 @@ app.whenReady().then(async () => {
   // 当日首开自动生成日报（spec §11.1）+ 每日备份——后台执行，不阻塞窗口
   void (async () => {
     await runBackup(ctx.dataDir, ctx.getSettings().backupRetention)
+    // 语义索引后台增量更新（启用时）
+    const emb = ctx.getEmbedding()
+    if (emb) {
+      const { VectorStore } = await import('./db/vectors.js')
+      new VectorStore(ctx.repo.getDb())
+        .embedMissing(ctx.repo, emb)
+        .catch(() => undefined)
+    }
+    const { VectorStore } = await import('./db/vectors.js')
+    const { SemanticSearch } = await import('./analysis/semantic.js')
+    const semantic = emb ? new SemanticSearch(ctx.repo, new VectorStore(ctx.repo.getDb()), emb) : null
     await new Scheduler(ctx.repo).ensureReportForToday(ctx.getLlm(), {
       desensitize: ctx.getSettings().desensitize,
-      search: ctx.getSearch()
+      search: ctx.getSearch(),
+      semantic
     })
   })()
   app.on('activate', () => {

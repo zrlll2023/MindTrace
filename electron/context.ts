@@ -17,6 +17,7 @@ export interface AppContext {
   secrets: SecretBox
   getLlm(): LLMAdapter | null
   getSearch(): import('./adapters/search').SearchAdapter | null
+  getEmbedding(): import('./adapters/embedding').EmbeddingAdapter | null
   getSettings(): AppSettings
   saveSettings(s: AppSettings): void
 }
@@ -62,12 +63,21 @@ export async function initContext(explicitDataDir?: string): Promise<AppContext>
     return new SearchAdapter({ provider: s.searchProvider, apiKey: key })
   }
 
+  const getEmbedding = (): import('./adapters/embedding').EmbeddingAdapter | null => {
+    const s = loadSettings()
+    if (!s.embeddingEnabled || !s.embeddingModel || !s.baseUrl) return null
+    const key = secrets.get('llm_api_key') ?? ''
+    const { EmbeddingAdapter } = require('./adapters/embedding.js') as typeof import('./adapters/embedding')
+    return new EmbeddingAdapter({ baseUrl: s.baseUrl, apiKey: key, model: s.embeddingModel })
+  }
+
   ctx = {
     dataDir,
     repo,
     secrets,
     getLlm,
     getSearch,
+    getEmbedding,
     getSettings: () => ({ ...cachedSettings }),
     saveSettings(s: AppSettings) {
       cachedSettings = s

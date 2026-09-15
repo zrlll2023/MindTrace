@@ -76,6 +76,22 @@ const TOOL_SPECS: ToolSpec[] = [
         required: ['query']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'semantic_search',
+      description:
+        '按含义（语义相似度）检索用户的本地记录，适合模糊主题查找，如「和情绪波动相关的记录」。与 query_entries（关键词精确匹配）互补。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '自然语言描述要找的主题' },
+          topK: { type: 'number', description: '返回条数，默认 8' }
+        },
+        required: ['query']
+      }
+    }
   }
 ]
 
@@ -121,7 +137,11 @@ export class AnalyzeEngine {
   constructor(
     private repo: Repo,
     private llm: LLMAdapter,
-    private opts: { desensitize?: boolean; search?: SearchAdapter | null } = {}
+    private opts: {
+      desensitize?: boolean
+      search?: SearchAdapter | null
+      semantic?: import('./semantic').SemanticSearch | null
+    } = {}
   ) {
     this.tools = new AnalysisTools(repo)
   }
@@ -161,10 +181,12 @@ export class AnalyzeEngine {
     for (let round = 0; round <= MAX_TOOL_CALLS; round++) {
       const isFinalRound = round === MAX_TOOL_CALLS
       let msg: { content: string | null; tool_calls?: ToolCall[] }
-      // 工具列表：未配置搜索时不下发 web_search，避免模型白调用
-      const activeTools = this.opts.search
-        ? TOOL_SPECS
-        : TOOL_SPECS.filter(t => t.function.name !== 'web_search')
+      // 工具列表：未配置搜索时不下发 web_search；未启用语义时不下发 semantic_search
+      const activeTools = TOOL_SPECS.filter(t => {
+        if (t.function.name === 'web_search') return !!this.opts.search
+        if (t.function.name === 'semantic_search') return !!this.opts.semantic?.available
+        return true
+      })
       try {
         msg = await this.llm.chatFull(
           messages,
@@ -185,9 +207,10 @@ export class AnalyzeEngine {
         break
       }
       for (const tc of msg.tool_calls) {
-        // 联网搜索不计入 6 次本地工具上限（prompt 中已要求克制）
-        if (tc.function.name !== 'web_search' && toolCalls >= MAX_TOOL_CALLS) continue
-        if (tc.function.name !== 'web_search') toolCalls++
+        // 联网/语义搜索不计入 6 次本地工具上限（prompt 中已要求克制）
+        const isFreeTool = tc.function.name === 'web_search' || tc.function.name === 'semantic_search'
+        if (!isFreeTool && toolCalls >= MAX_TOOL_CALLS) continue
+        if (!isFreeTool) toolCalls++
         let result: string
         try {
           result = await this.executeTool(tc)
@@ -208,8 +231,18 @@ export class AnalyzeEngine {
     let threads: ThreadPayload[] = []
     try {
       const payload = extractJsonObject(finalText)
-      reportMd = payload.report_md ?? finalText
-      threads = Array.isArray(payload.threads) ? payload.threads : []
+      // 契约闸门：报告载荷必须通过 validateReportPayload（docs/ai-content-contract.md §3）
+      const { validateReportPayload } = await import('./validators.js')
+      const v = validateReportPayload(payload)
+      if (v.ok) {
+        reportMd = v.payload!.report_md
+        threads = v.payload!.threads
+      } else if (finalText.includes('##')) {
+        reportMd = finalText
+      } else {
+        degraded = true
+        reportMd = finalText || '（报告生成失败，请稍后重试）'
+      }
     } catch {
       // 输出不是 JSON：若内容看起来像完整报告则直接采用，否则标记降级
       if (finalText.includes('##')) {
@@ -324,6 +357,27 @@ export class AnalyzeEngine {
         try {
           const results = await this.opts.search.search(args.query, { maxResults: args.maxResults })
           return JSON.stringify({ results })
+        } catch (e) {
+          return JSON.stringify({ error: (e as Error).message })
+        }
+      }
+      case 'semantic_search': {
+        // 语义检索本地记录（按含义而非关键词）。不计入 6 次上限。
+        if (!this.opts.semantic?.available) {
+          return JSON.stringify({ error: 'not_configured', hint: '未启用语义搜索，请改用 query_entries' })
+        }
+        try {
+          const hits = await this.opts.semantic.search(String(args.query ?? ''), args.topK ?? 8)
+          return JSON.stringify({
+            count: hits.length,
+            entries: hits.map(h => ({
+              id: h.entry.id,
+              entry_date: h.entry.entry_date,
+              kind: h.entry.kind,
+              relevance: Number(h.score.toFixed(3)),
+              content: JSON.parse(h.entry.content)
+            }))
+          })
         } catch (e) {
           return JSON.stringify({ error: (e as Error).message })
         }

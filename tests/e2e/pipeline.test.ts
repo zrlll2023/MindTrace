@@ -155,4 +155,64 @@ describe('全链路（Mock LLM 替代真实 Key）', () => {
     expect(backup).not.toBeNull()
     expect(fs.existsSync(backup!.path)).toBe(true)
   })
+
+  it('8. 契约闸门：非法 AI 条目兜底为 other、报告载荷损坏标记 degraded', async () => {
+    const { validateParsedEntry, validateReportPayload } = await import(
+      '../../electron/analysis/validators'
+    )
+    // 非法 kind
+    expect(validateParsedEntry({ kind: 'alien', content: {}, confidence: 1 }).ok).toBe(false)
+    // 越界 sleep
+    expect(
+      validateParsedEntry({ kind: 'sleep', content: { hours: 99 }, confidence: 1 }).ok
+    ).toBe(false)
+    // 注入标签被剥离
+    const v = validateParsedEntry({ kind: 'idea', content: { text: '<script>x</script>正常想法' }, confidence: 1 })
+    expect(v.ok).toBe(true)
+    expect((v.entry!.content as { text: string }).text).not.toContain('<script>')
+    // 报告载荷缺 report_md
+    expect(validateReportPayload({ threads: [] }).ok).toBe(false)
+  })
+
+  it('9. 语义搜索：假 embedding 下主题相关条目得分更高且可检索', async () => {
+    const { VectorStore } = await import('../../electron/db/vectors')
+    const vs = new VectorStore(repo.getDb())
+    // 手工向量：RAG 主题 [1,0]，睡眠主题 [0,1]
+    const entries = await repo.listEntries({})
+    for (const e of entries) {
+      const c = JSON.parse(e.content) as { text?: string; hours?: number }
+      const isRag = (c.text ?? '').includes('RAG') || (c.text ?? '').includes('向量')
+      await vs.upsert(e.id, isRag ? [1, 0.1, 0] : [0.1, 0, 1], 'h')
+    }
+    const { SemanticSearch } = await import('../../electron/analysis/semantic')
+    // 假 embedding 适配器：查询向量固定 [1, 0.2, 0]（贴近 RAG 主题）
+    const fakeEmb = new (class {
+      async embedOne() {
+        return [1, 0.2, 0]
+      }
+    })() as unknown as import('../../electron/adapters/embedding').EmbeddingAdapter
+    const sem = new SemanticSearch(repo, vs, fakeEmb)
+    const hits = await sem.search('RAG 评估相关', 5, 0.5)
+    expect(hits.length).toBeGreaterThanOrEqual(1)
+    // 首条命中必须是 RAG 主题而非睡眠
+    const top = JSON.parse(hits[0].entry.content) as { text?: string }
+    expect(top.text ?? '').toMatch(/RAG|向量/)
+  })
+
+  it('10. 引导式周度研究：AI 返回搜索词计划（走 Mock LLM）', async () => {
+    const { planResearch } = await import('../../electron/analysis/labs')
+    const plan = await planResearch(llm, ['想法孵化线'], ['向量检索日记'])
+    expect(plan.queries.length).toBeGreaterThanOrEqual(3)
+    expect(plan.queries.length).toBeLessThanOrEqual(5)
+    expect(plan.note).toBeTruthy()
+  })
+
+  it('11. 相关性仪表盘聚合：假数据可算出逐日指标', async () => {
+    const { dailyMetrics } = await import('../../electron/analysis/labs')
+    const m = await dailyMetrics(repo, '2026-09-14', '2026-09-15')
+    expect(m).toHaveLength(2)
+    const d14 = m.find(x => x.date === '2026-09-14')!
+    expect(d14.entry_count).toBeGreaterThanOrEqual(2) // 导入的对话条目
+    expect(d14.idea_count).toBeGreaterThanOrEqual(0)
+  })
 })

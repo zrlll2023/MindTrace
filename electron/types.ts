@@ -32,6 +32,8 @@ export interface AppSettings {
   desensitize: boolean // 出网脱敏开关
   backupRetention: number
   searchProvider: SearchProvider // v2：联网搜索（none=关闭）
+  embeddingEnabled: boolean // v2.5：语义搜索（复用主提供商 baseUrl+Key，需模型支持 embeddings）
+  embeddingModel: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -40,7 +42,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   model: '',
   desensitize: true,
   backupRetention: 30,
-  searchProvider: 'none'
+  searchProvider: 'none',
+  embeddingEnabled: false,
+  embeddingModel: ''
 }
 
 export interface ParsedEntry {

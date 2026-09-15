@@ -77,6 +77,11 @@ export class Repo {
     persistDb(this.db, this.dataDir)
   }
 
+  /** 底层数据库实例（向量存储等模块共用同一连接） */
+  getDb(): Database {
+    return this.db
+  }
+
   // ---------- entries ----------
 
   async insertEntry(e: NewEntry): Promise<Entry> {
@@ -112,6 +117,41 @@ export class Repo {
       if (res.length) for (const v of res[0].values) found.add(v[0] as string)
     }
     return found
+  }
+
+  // ---------- 语义搜索支持 ----------
+
+  /** 需要嵌入的条目（无向量或 content 已变更），带 content_hash */
+  async entriesNeedingEmbedding(): Promise<
+    { id: number; content: string; content_hash: string }[]
+  > {
+    const crypto = await import('node:crypto')
+    const res = this.db.exec(`
+      SELECT e.id, e.content, v.content_hash
+      FROM entries e
+      LEFT JOIN vectors v ON v.entry_id = e.id
+    `)
+    if (!res.length) return []
+    const out: { id: number; content: string; content_hash: string }[] = []
+    for (const [id, content, hash] of res[0].values as [number, string, string | null][]) {
+      const h = crypto.createHash('sha1').update(content).digest('hex')
+      if (hash !== h) out.push({ id, content, content_hash: h })
+    }
+    return out
+  }
+
+  /** 按 id 批量取条目（语义搜索结果关联用） */
+  async getEntriesByIds(ids: number[]): Promise<Entry[]> {
+    if (!ids.length) return []
+    const placeholders = ids.map(() => '?').join(',')
+    const res = this.db.exec(
+      `SELECT * FROM entries WHERE id IN (${placeholders})`,
+      ids
+    )
+    if (!res.length) return []
+    return res[0].values.map((_: unknown[], i: number) =>
+      this.valuesToEntry(res[0].columns, res[0].values[i])
+    )
   }
 
   async listEntries(filter: EntryFilter): Promise<Entry[]> {

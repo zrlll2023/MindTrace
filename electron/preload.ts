@@ -40,7 +40,17 @@ const api = {
   },
   import: {
     exportZip: () => ipcRenderer.invoke('import:exportZip')
-  }
+  },
+  semantic: {
+    search: (query: string, topK?: number) => ipcRenderer.invoke('semantic:search', query, topK),
+    index: () => ipcRenderer.invoke('semantic:index'),
+    status: () => ipcRenderer.invoke('semantic:status')
+  },
+  labs: {
+    metrics: (dateFrom: string, dateTo: string) => ipcRenderer.invoke('labs:metrics', dateFrom, dateTo),
+    planResearch: () => ipcRenderer.invoke('labs:planResearch'),
+    saveFinding: (text: string, from: string) => ipcRenderer.invoke('labs:saveFinding', text, from)
+  },
 }
 
 contextBridge.exposeInMainWorld('api', api)

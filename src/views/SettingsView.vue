@@ -66,6 +66,27 @@
     </div>
 
     <div class="card">
+      <h3>语义搜索（v2.5）</h3>
+      <p class="hint">按含义检索你的记录（如「情绪波动相关的记录」）。使用当前提供商的 Embedding 模型（需该服务支持，如 SiliconFlow / 智谱 / OpenAI / Ollama）。</p>
+      <div class="field">
+        <label class="checkbox">
+          <input v-model="form.embeddingEnabled" type="checkbox" />
+          启用语义搜索
+        </label>
+      </div>
+      <div v-if="form.embeddingEnabled" class="field">
+        <label>Embedding 模型名（如 text-embedding-3-small / embedding-2 / bge-m3）</label>
+        <input v-model="form.embeddingModel" placeholder="embedding 模型名" />
+      </div>
+      <div v-if="form.embeddingEnabled" class="row">
+        <button class="secondary" :disabled="indexing" @click="onIndex">
+          {{ indexing ? '索引中…' : `重建索引（已索引 ${indexedCount} 条）` }}
+        </button>
+        <span v-if="indexMsg" :class="indexOk ? 'msg ok' : 'msg err'">{{ indexMsg }}</span>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>导入 AI 对话（v2）</h3>
       <p class="hint">
         支持导入 ChatGPT / Claude 官方数据导出 ZIP（设置 → Data Controls → Export）。
@@ -155,6 +176,35 @@ async function onTest(): Promise<void> {
 const importing = ref(false)
 const importMsg = ref('')
 const importOk = ref(false)
+
+// ---------- 语义搜索 ----------
+const indexing = ref(false)
+const indexMsg = ref('')
+const indexOk = ref(false)
+const indexedCount = ref(0)
+
+onMounted(async () => {
+  const s = await window.api.semantic.status()
+  indexedCount.value = s.indexed
+})
+
+async function onIndex(): Promise<void> {
+  indexing.value = true
+  indexMsg.value = ''
+  try {
+    const r = await window.api.semantic.index()
+    if (r.ok) {
+      indexedCount.value = (await window.api.semantic.status()).indexed
+      indexOk.value = true
+      indexMsg.value = `✅ 索引完成（本次新增 ${r.indexed} 条）`
+    } else {
+      indexOk.value = false
+      indexMsg.value = `❌ ${r.error}`
+    }
+  } finally {
+    indexing.value = false
+  }
+}
 
 async function onImport(): Promise<void> {
   importing.value = true

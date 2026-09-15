@@ -8,7 +8,11 @@ export class Scheduler {
   /** 当日首次打开应用时生成今日日报；无当日 entries 返回 null（spec §11.1） */
   async ensureReportForToday(
     llm: LLMAdapter | null,
-    opts: { desensitize?: boolean; search?: import('./adapters/search').SearchAdapter | null } = {}
+    opts: {
+      desensitize?: boolean
+      search?: import('./adapters/search').SearchAdapter | null
+      semantic?: import('./analysis/semantic').SemanticSearch | null
+    } = {}
   ): Promise<ReturnType<AnalyzeEngine['analyzeDay']>> {
     const today = new Date().toISOString().slice(0, 10)
     const existing = await this.repo.getReport('daily', today)

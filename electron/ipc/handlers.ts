@@ -6,6 +6,25 @@ import { desensitizeText } from '../analysis/desensitize'
 import { NewEntry } from '../db/repository'
 import { TimelineFilter } from '../types'
 
+/** 统一构建分析引擎（脱敏/联网搜索/语义检索配置一次注入） */
+async function buildEngine(c: ReturnType<typeof getContext>) {
+  const { AnalyzeEngine } = await import('../analysis/engine.js')
+  const semantic = await makeSemantic(c)
+  return new AnalyzeEngine(c.repo, c.getLlm()!, {
+    desensitize: c.getSettings().desensitize,
+    search: c.getSearch(),
+    semantic
+  })
+}
+
+async function makeSemantic(c: ReturnType<typeof getContext>) {
+  const emb = c.getEmbedding()
+  if (!emb) return null
+  const { VectorStore } = await import('../db/vectors.js')
+  const { SemanticSearch } = await import('../analysis/semantic.js')
+  return new SemanticSearch(c.repo, new VectorStore(c.repo.getDb()), emb)
+}
+
 export function registerIpcHandlers(): void {
   // ---------- settings ----------
   ipcMain.handle('settings:get', () => {
@@ -85,13 +104,19 @@ export function registerIpcHandlers(): void {
     async (_e, raw: string, entries: { kind: string; content: object; confidence: number }[]) => {
       const c = getContext()
       try {
+        const { validateParsedEntry } = await import('../analysis/validators.js')
         const saved = [] as Awaited<ReturnType<typeof c.repo.insertEntry>>[]
         for (const entry of entries) {
+          // 契约闸门：非法条目兜底为 other/confidence=0，绝不丢用户原文
+          const v = validateParsedEntry(entry)
+          const kind = v.ok ? v.entry!.kind : 'other'
+          const content = v.ok ? v.entry!.content : { text: String(entry.content ?? '') }
+          const confidence = v.ok ? v.entry!.confidence : 0
           const e: NewEntry = {
             raw_text: raw,
-            kind: entry.kind as NewEntry['kind'],
-            content: JSON.stringify(entry.content),
-            confidence: entry.confidence,
+            kind: kind as NewEntry['kind'],
+            content: JSON.stringify(content),
+            confidence,
             source: 'chat'
           }
           saved.push(await c.repo.insertEntry(e))
@@ -131,10 +156,7 @@ export function registerIpcHandlers(): void {
     const llm = c.getLlm()
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
     const { AnalyzeEngine } = await import('../analysis/engine.js')
-    const engine = new AnalyzeEngine(c.repo, llm, {
-      desensitize: c.getSettings().desensitize,
-      search: c.getSearch()
-    })
+    const engine = await buildEngine(c)
     try {
       const report = await engine.analyzeDay(date)
       c.repo.save()
@@ -149,10 +171,7 @@ export function registerIpcHandlers(): void {
     const llm = c.getLlm()
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
     const { AnalyzeEngine } = await import('../analysis/engine.js')
-    const engine = new AnalyzeEngine(c.repo, llm, {
-      desensitize: c.getSettings().desensitize,
-      search: c.getSearch()
-    })
+    const engine = await buildEngine(c)
     try {
       const report = await engine.analyzeWeek(endDate)
       c.repo.save()
@@ -201,5 +220,104 @@ export function registerIpcHandlers(): void {
     } catch (e) {
       return { ok: false, error: (e as Error).message } as never
     }
+  })
+
+  // ---------- semantic search（v2.5） ----------
+  ipcMain.handle('semantic:search', async (_e, query: string, topK?: number) => {
+    const c = getContext()
+    const emb = c.getEmbedding()
+    if (!emb) return { ok: false, error: 'not_configured', hits: [] }
+    try {
+      const { VectorStore } = await import('../db/vectors.js')
+      const { SemanticSearch } = await import('../analysis/semantic.js')
+      const sem = new SemanticSearch(c.repo, new VectorStore(c.repo.getDb()), emb)
+      const hits = await sem.search(query, topK ?? 10)
+      return {
+        ok: true,
+        hits: hits.map(h => ({
+          id: h.entry.id,
+          kind: h.entry.kind,
+          entry_date: h.entry.entry_date,
+          created_at: h.entry.created_at,
+          content: h.entry.content,
+          raw_text: h.entry.raw_text,
+          score: Number(h.score.toFixed(4))
+        }))
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, hits: [] }
+    }
+  })
+
+  ipcMain.handle('semantic:index', async () => {
+    const c = getContext()
+    const emb = c.getEmbedding()
+    if (!emb) return { ok: false, error: 'not_configured' }
+    try {
+      const { VectorStore } = await import('../db/vectors.js')
+      const vs = new VectorStore(c.repo.getDb())
+      const n = await vs.embedMissing(c.repo, emb)
+      c.repo.save()
+      return { ok: true, indexed: n }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('semantic:status', async () => {
+    const c = getContext()
+    const emb = c.getEmbedding()
+    if (!emb) return { configured: false, indexed: 0 }
+    const { VectorStore } = await import('../db/vectors.js')
+    const vs = new VectorStore(c.repo.getDb())
+    return { configured: true, indexed: await vs.count() }
+  })
+
+  // ---------- labs（v3 实验性功能） ----------
+  ipcMain.handle('labs:metrics', async (_e, dateFrom: string, dateTo: string) => {
+    const c = getContext()
+    const { dailyMetrics } = await import('../analysis/labs.js')
+    return dailyMetrics(c.repo, dateFrom, dateTo)
+  })
+
+  ipcMain.handle('labs:planResearch', async () => {
+    const c = getContext()
+    const llm = c.getLlm()
+    if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商', queries: [], note: '' }
+    try {
+      const threads = await c.repo.listThreads()
+      const recent = await c.repo.listEntries({ kind: 'idea', limit: 10 })
+      const ideas = recent.map(e => {
+        try {
+          return String((JSON.parse(e.content) as { text?: string }).text ?? '')
+        } catch {
+          return ''
+        }
+      }).filter(Boolean)
+      const { planResearch } = await import('../analysis/labs.js')
+      const plan = await planResearch(llm, threads.map(t => t.title), ideas)
+      return { ok: true, ...plan }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, queries: [], note: '' }
+    }
+  })
+
+  ipcMain.handle('labs:saveFinding', (_e, text: string, from: string) => {
+    const c = getContext()
+    // 契约闸门：人工粘贴的研究收获按 quote 入库（可选出处=链接）
+    return c.repo
+      .insertEntry({
+        raw_text: text,
+        kind: 'quote',
+        content: JSON.stringify(from ? { text, from } : { text }),
+        confidence: 1,
+        source: 'labs:research',
+        entry_date: new Date().toISOString().slice(0, 10)
+      })
+      .then(e => {
+        c.repo.save()
+        return { ok: true, id: e.id }
+      })
+      .catch((err: Error) => ({ ok: false, error: err.message }))
   })
 }

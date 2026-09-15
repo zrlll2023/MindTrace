@@ -28,6 +28,12 @@ export const routes: NavRoute[] = [
     meta: { nav: true, icon: '📊', label: '报告' }
   },
   {
+    path: '/labs',
+    name: 'labs',
+    component: () => import('./views/LabsView.vue'),
+    meta: { nav: true, icon: '🧪', label: '实验室' }
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('./views/SettingsView.vue'),

@@ -19,13 +19,19 @@
         <input
           v-model="keyword"
           class="search"
-          placeholder="全文搜索…"
+          :placeholder="semanticOn ? '语义搜索（按含义）…' : '全文搜索…'"
           @input="onSearch"
         />
+        <label class="checkbox" title="按含义而非关键词匹配（需在设置页启用 Embedding）">
+          <input v-model="semanticOn" type="checkbox" @change="onSearch" />语义
+        </label>
       </div>
     </div>
 
-    <div v-if="searching" class="search-note">搜索「{{ keyword }}」的结果（{{ entries.length }} 条）</div>
+    <div v-if="searching" class="search-note">
+      {{ semanticOn ? '语义搜索' : '搜索' }}「{{ keyword }}」的结果（{{ entries.length }} 条）
+      <span v-if="semanticNotice" class="warn">{{ semanticNotice }}</span>
+    </div>
 
     <div class="list">
       <div v-for="group in groups" :key="group.date" class="day-group">
@@ -38,6 +44,7 @@
         >
           <span class="badge">{{ KIND_LABELS[e.kind as EntryKind] }}</span>
           <span class="summary">{{ summarize(e) }}</span>
+          <span v-if="semanticOn && e._score != null" class="score">{{ Math.round(e._score * 100) }}%</span>
           <span class="time">{{ e.created_at.slice(11, 16) }}</span>
         </div>
       </div>
@@ -79,6 +86,7 @@ interface EntryRow {
   confidence: number
   created_at: string
   entry_date: string
+  _score?: number
 }
 
 const entries = ref<EntryRow[]>([])
@@ -87,6 +95,8 @@ const dateFrom = ref('')
 const dateTo = ref('')
 const keyword = ref('')
 const searching = ref(false)
+const semanticOn = ref(false)
+const semanticNotice = ref('')
 const PAGE = 50
 const offset = ref(0)
 const hasMore = ref(false)
@@ -154,11 +164,24 @@ function onSearch(): void {
   searchTimer = setTimeout(async () => {
     if (!keyword.value.trim()) {
       searching.value = false
+      semanticNotice.value = ''
       await load()
       return
     }
     searching.value = true
-    entries.value = await window.api.timeline.search(keyword.value.trim())
+    if (semanticOn.value) {
+      const r = await window.api.semantic.search(keyword.value.trim(), 30)
+      if (r.ok) {
+        semanticNotice.value = ''
+        entries.value = r.hits.map((h: { score: number } & Record<string, unknown>) => ({ ...h, _score: h.score })) as never
+      } else {
+        semanticNotice.value = r.error === 'not_configured' ? '未启用 Embedding，已回退关键词搜索' : `语义搜索失败：${r.error}`
+        entries.value = await window.api.timeline.search(keyword.value.trim())
+      }
+    } else {
+      semanticNotice.value = ''
+      entries.value = await window.api.timeline.search(keyword.value.trim())
+    }
   }, 250)
 }
 
@@ -202,6 +225,9 @@ onMounted(() => void load())
 .badge { font-size: 12px; background: #eef1f5; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
 .summary { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .time { font-size: 12px; color: #999; }
+.score { font-size: 11px; color: #4f7cff; background: #eef2ff; border-radius: 6px; padding: 1px 6px; }
+.checkbox { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #555; cursor: pointer; }
+.warn { color: #b45309; margin-left: 8px; }
 .empty { text-align: center; color: #999; margin-top: 80px; }
 .more { display: block; margin: 12px auto; padding: 7px 20px; border: 1px solid #d0d3d8; background: #fff; border-radius: 8px; cursor: pointer; }
 .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; justify-content: flex-end; z-index: 10; }
