@@ -273,6 +273,37 @@ export function registerIpcHandlers(): void {
     return { configured: true, indexed: await vs.count() }
   })
 
+  // ---------- hybrid search（v2.5） ----------
+  ipcMain.handle(
+    'hybrid:search',
+    async (_e, query: string, topK?: number, expand?: boolean) => {
+      const c = getContext()
+      try {
+        const semantic = await makeSemantic(c)
+        const { HybridSearch } = await import('../analysis/hybrid.js')
+        const hybrid = new HybridSearch(c.repo, semantic)
+        const queries = expand && c.getLlm() ? await hybrid.expandQuery(query, c.getLlm()!) : [query]
+        const hits = await hybrid.searchMultiQuery(queries, topK ?? 10)
+        return {
+          ok: true,
+          queries,
+          hits: hits.map(h => ({
+            id: h.entry.id,
+            kind: h.entry.kind,
+            entry_date: h.entry.entry_date,
+            created_at: h.entry.created_at,
+            content: h.entry.content,
+            raw_text: h.entry.raw_text,
+            score: h.score,
+            fused_via: h.fused_via
+          }))
+        }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message, queries: [query], hits: [] }
+      }
+    }
+  )
+
   // ---------- labs（v3 实验性功能） ----------
   ipcMain.handle('labs:metrics', async (_e, dateFrom: string, dateTo: string) => {
     const c = getContext()

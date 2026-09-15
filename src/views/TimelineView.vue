@@ -19,17 +19,18 @@
         <input
           v-model="keyword"
           class="search"
-          :placeholder="semanticOn ? '语义搜索（按含义）…' : '全文搜索…'"
+          :placeholder="semanticOn ? '混合搜索（关键词+语义，AI 扩展查询）…' : '全文搜索…'"
           @input="onSearch"
         />
-        <label class="checkbox" title="按含义而非关键词匹配（需在设置页启用 Embedding）">
-          <input v-model="semanticOn" type="checkbox" @change="onSearch" />语义
+        <label class="checkbox" title="关键词 + 语义双路融合（RRF），并让 AI 扩展查询变体；需在设置页启用 Embedding">
+          <input v-model="semanticOn" type="checkbox" @change="onSearch" />混合
         </label>
       </div>
     </div>
 
     <div v-if="searching" class="search-note">
-      {{ semanticOn ? '语义搜索' : '搜索' }}「{{ keyword }}」的结果（{{ entries.length }} 条）
+      {{ semanticOn ? '混合搜索' : '搜索' }}「{{ keyword }}」的结果（{{ entries.length }} 条）
+      <span v-if="expandedQueries.length > 1" class="exp">AI 扩展：{{ expandedQueries.slice(1).join(' / ') }}</span>
       <span v-if="semanticNotice" class="warn">{{ semanticNotice }}</span>
     </div>
 
@@ -95,8 +96,9 @@ const dateFrom = ref('')
 const dateTo = ref('')
 const keyword = ref('')
 const searching = ref(false)
-const semanticOn = ref(false)
+const semanticOn = ref(true) // 默认开：有 Embedding 用混合，无则自动回退关键词
 const semanticNotice = ref('')
+const expandedQueries = ref<string[]>([])
 const PAGE = 50
 const offset = ref(0)
 const hasMore = ref(false)
@@ -165,17 +167,21 @@ function onSearch(): void {
     if (!keyword.value.trim()) {
       searching.value = false
       semanticNotice.value = ''
+      expandedQueries.value = []
       await load()
       return
     }
     searching.value = true
+    expandedQueries.value = []
     if (semanticOn.value) {
-      const r = await window.api.semantic.search(keyword.value.trim(), 30)
+      // 混合搜索：关键词 ⊕ 语义（RRF 融合）+ AI 查询扩展；Embedding 未配置时后端自动退化为纯关键词
+      const r = await window.api.hybrid.search(keyword.value.trim(), 30, true)
       if (r.ok) {
         semanticNotice.value = ''
+        expandedQueries.value = r.queries
         entries.value = r.hits.map((h: { score: number } & Record<string, unknown>) => ({ ...h, _score: h.score })) as never
       } else {
-        semanticNotice.value = r.error === 'not_configured' ? '未启用 Embedding，已回退关键词搜索' : `语义搜索失败：${r.error}`
+        semanticNotice.value = `搜索失败：${r.error}`
         entries.value = await window.api.timeline.search(keyword.value.trim())
       }
     } else {
@@ -228,6 +234,7 @@ onMounted(() => void load())
 .score { font-size: 11px; color: #4f7cff; background: #eef2ff; border-radius: 6px; padding: 1px 6px; }
 .checkbox { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #555; cursor: pointer; }
 .warn { color: #b45309; margin-left: 8px; }
+.exp { color: #4f7cff; margin-left: 8px; font-size: 11px; }
 .empty { text-align: center; color: #999; margin-top: 80px; }
 .more { display: block; margin: 12px auto; padding: 7px 20px; border: 1px solid #d0d3d8; background: #fff; border-radius: 8px; cursor: pointer; }
 .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; justify-content: flex-end; z-index: 10; }

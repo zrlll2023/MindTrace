@@ -80,14 +80,15 @@ const TOOL_SPECS: ToolSpec[] = [
   {
     type: 'function',
     function: {
-      name: 'semantic_search',
+      name: 'hybrid_search',
       description:
-        '按含义（语义相似度）检索用户的本地记录，适合模糊主题查找，如「和情绪波动相关的记录」。与 query_entries（关键词精确匹配）互补。',
+        '混合检索本地记录：关键词精确匹配 + 语义含义匹配双路融合（RRF），可自动扩展查询变体。适合绝大多数检索场景，优先于 query_entries 使用。',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: '自然语言描述要找的主题' },
-          topK: { type: 'number', description: '返回条数，默认 8' }
+          query: { type: 'string', description: '自然语言搜索词（中文或英文）' },
+          topK: { type: 'number', description: '返回条数，默认 8' },
+          expand: { type: 'boolean', description: '是否让 AI 扩展查询变体，默认 false（已在扩展后的变体上执行）' }
         },
         required: ['query']
       }
@@ -181,10 +182,9 @@ export class AnalyzeEngine {
     for (let round = 0; round <= MAX_TOOL_CALLS; round++) {
       const isFinalRound = round === MAX_TOOL_CALLS
       let msg: { content: string | null; tool_calls?: ToolCall[] }
-      // 工具列表：未配置搜索时不下发 web_search；未启用语义时不下发 semantic_search
+      // 工具列表：未配置搜索时不下发 web_search；hybrid_search 始终可用（无语义时自动退化为纯关键词）
       const activeTools = TOOL_SPECS.filter(t => {
         if (t.function.name === 'web_search') return !!this.opts.search
-        if (t.function.name === 'semantic_search') return !!this.opts.semantic?.available
         return true
       })
       try {
@@ -207,8 +207,8 @@ export class AnalyzeEngine {
         break
       }
       for (const tc of msg.tool_calls) {
-        // 联网/语义搜索不计入 6 次本地工具上限（prompt 中已要求克制）
-        const isFreeTool = tc.function.name === 'web_search' || tc.function.name === 'semantic_search'
+        // 联网/混合搜索不计入 6 次本地工具上限（prompt 中已要求克制）
+        const isFreeTool = tc.function.name === 'web_search' || tc.function.name === 'hybrid_search'
         if (!isFreeTool && toolCalls >= MAX_TOOL_CALLS) continue
         if (!isFreeTool) toolCalls++
         let result: string
@@ -361,20 +361,20 @@ export class AnalyzeEngine {
           return JSON.stringify({ error: (e as Error).message })
         }
       }
-      case 'semantic_search': {
-        // 语义检索本地记录（按含义而非关键词）。不计入 6 次上限。
-        if (!this.opts.semantic?.available) {
-          return JSON.stringify({ error: 'not_configured', hint: '未启用语义搜索，请改用 query_entries' })
-        }
+      case 'hybrid_search': {
+        // 混合检索：FTS ⊕ 语义（RRF 融合）。不计入 6 次上限。
         try {
-          const hits = await this.opts.semantic.search(String(args.query ?? ''), args.topK ?? 8)
+          const { HybridSearch } = await import('./hybrid.js')
+          const hybrid = new HybridSearch(this.repo, this.opts.semantic ?? null)
+          const hits = await hybrid.search(String(args.query ?? ''), args.topK ?? 8)
           return JSON.stringify({
             count: hits.length,
             entries: hits.map(h => ({
               id: h.entry.id,
               entry_date: h.entry.entry_date,
               kind: h.entry.kind,
-              relevance: Number(h.score.toFixed(3)),
+              relevance: h.score,
+              via: h.fused_via,
               content: JSON.parse(h.entry.content)
             }))
           })

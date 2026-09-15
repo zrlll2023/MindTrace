@@ -46,6 +46,10 @@ const api = {
     index: () => ipcRenderer.invoke('semantic:index'),
     status: () => ipcRenderer.invoke('semantic:status')
   },
+  hybrid: {
+    search: (query: string, topK?: number, expand?: boolean) =>
+      ipcRenderer.invoke('hybrid:search', query, topK, expand)
+  },
   labs: {
     metrics: (dateFrom: string, dateTo: string) => ipcRenderer.invoke('labs:metrics', dateFrom, dateTo),
     planResearch: () => ipcRenderer.invoke('labs:planResearch'),
