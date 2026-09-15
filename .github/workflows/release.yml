@@ -47,11 +47,14 @@ jobs:
       - name: Type check
         run: pnpm typecheck
 
+      - name: Build application
+        run: pnpm build
+
       - name: Test
         run: pnpm test
 
       - name: Build Windows installer
-        run: pnpm dist
+        run: pnpm exec electron-builder --win
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
