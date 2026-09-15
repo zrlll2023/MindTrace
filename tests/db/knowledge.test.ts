@@ -4,6 +4,17 @@ import { KnowledgeBase } from '../../electron/db/knowledge'
 import { extractText } from '../../electron/import/office'
 
 describe('知识库存储', () => {
+  it('按 system_key 复用系统文件夹，改名后仍不重复创建', async () => {
+    const db = await initDb(':memory:')
+    const kb = new KnowledgeBase(db)
+    const first = kb.ensureSystemFolder('ai_quick_capture', 'AI 快速记录')
+    kb.renameFolder(first.id, '我的 AI 记录')
+    const second = kb.ensureSystemFolder('ai_quick_capture', 'AI 快速记录')
+    expect(second.id).toBe(first.id)
+    expect(second.name).toBe('我的 AI 记录')
+    kb.deleteFolder(first.id)
+    expect(kb.ensureSystemFolder('ai_quick_capture', 'AI 快速记录').id).not.toBe(first.id)
+  })
   it('文件夹：创建/重命名/删除（级联删条目）', async () => {
     const db = await initDb(':memory:')
     const kb = new KnowledgeBase(db)

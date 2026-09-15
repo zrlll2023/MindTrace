@@ -6,6 +6,7 @@ import { Repo } from './db/repository'
 import { SecretBox } from './store/secrets'
 import { LLMAdapter } from './adapters/llm'
 import { AppSettings, DEFAULT_SETTINGS } from './types'
+import { resolveDataDir } from './store/data-location'
 
 /**
  * 应用上下文：数据目录、数据库、密钥盒、LLM 适配器。
@@ -26,7 +27,7 @@ let ctx: AppContext | null = null
 
 export async function initContext(explicitDataDir?: string): Promise<AppContext> {
   if (ctx) return ctx
-  const dataDir = explicitDataDir ?? path.join(app.getPath('userData'), 'data')
+  const dataDir = explicitDataDir ?? resolveDataDir(app.getPath('userData'))
   fs.mkdirSync(dataDir, { recursive: true })
 
   const db = await initDb(dataDir)

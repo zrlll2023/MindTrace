@@ -3,6 +3,7 @@ import { parseChatGPTExport } from '../../electron/import/chatgpt'
 
 const SAMPLE = JSON.stringify([
   {
+    id: 'chatgpt-rag-1',
     title: 'RAG 评估方法讨论',
     create_time: 1757894400, // 2026-09-15 00:00:00 UTC（示例）
     mapping: {
@@ -32,6 +33,7 @@ describe('parseChatGPTExport', () => {
     expect(out).toHaveLength(1)
     const conv = out[0]
     expect(conv.title).toBe('RAG 评估方法讨论')
+    expect(conv.externalId).toBe('chatgpt-rag-1')
     expect(conv.messages).toHaveLength(2)
     expect(conv.messages[0].role).toBe('user')
     expect(conv.messages[0].content).toContain('评估指标')

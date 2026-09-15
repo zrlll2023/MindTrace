@@ -91,7 +91,8 @@ describe('全链路（Mock LLM 替代真实 Key）', () => {
         ]
       }
     ])
-    expect(summary.imported).toBe(2)
+    expect(summary.knowledgeItems).toBe(1)
+    expect(summary.timelineSummaries).toBe(1)
   })
 
   it('3. 日报：真实工具循环（query_entries）→ 报告入库 + threads', async () => {
@@ -212,7 +213,7 @@ describe('全链路（Mock LLM 替代真实 Key）', () => {
     const m = await dailyMetrics(repo, '2026-09-14', '2026-09-15')
     expect(m).toHaveLength(2)
     const d14 = m.find(x => x.date === '2026-09-14')!
-    expect(d14.entry_count).toBeGreaterThanOrEqual(2) // 导入的对话条目
+    expect(d14.entry_count).toBeGreaterThanOrEqual(1) // 每个导入会话仅保留一条时间线摘要
     expect(d14.idea_count).toBeGreaterThanOrEqual(0)
   })
 

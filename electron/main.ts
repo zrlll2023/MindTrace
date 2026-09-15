@@ -1,15 +1,18 @@
-import { app, BrowserWindow, nativeTheme } from 'electron'
+import { app, BrowserWindow, dialog, Menu, nativeTheme } from 'electron'
 import path from 'node:path'
 import { initContext } from './context'
 import { registerIpcHandlers } from './ipc/handlers'
 import { Scheduler } from './scheduler'
 import { runBackup } from './store/backup'
+import fs from 'node:fs'
+import { dataLocationStatus } from './store/data-location'
 
 async function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
     title: 'MindTrace',
+    autoHideMenuBar: true,
     // 与「纸 / 墨」主题的底色一致，避免深色下露出原生白底
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f1013' : '#f6f5f2',
     show: false, // 内容就绪后再显示，避免空白窗落在控制台后面
@@ -32,7 +35,21 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  const ctx = await initContext()
+  Menu.setApplicationMenu(null)
+  const location = dataLocationStatus(app.getPath('userData'))
+  let explicitDataDir: string | undefined
+  if (location.configuredDir && !fs.existsSync(location.configuredDir)) {
+    const canUsePrevious = !!location.previousDir && fs.existsSync(location.previousDir)
+    const choice = dialog.showMessageBoxSync({
+      type: 'error', title: '数据目录不可用',
+      message: `已配置的数据目录无法访问：\n${location.configuredDir}`,
+      detail: canUsePrevious ? '可以临时使用迁移前目录启动；应用不会创建空数据库。' : '请恢复该磁盘或目录后重试。',
+      buttons: canUsePrevious ? ['使用迁移前目录', '退出'] : ['退出'], defaultId: 0, cancelId: canUsePrevious ? 1 : 0
+    })
+    if (!canUsePrevious || choice !== 0) { app.quit(); return }
+    explicitDataDir = location.previousDir!
+  }
+  const ctx = await initContext(explicitDataDir)
   registerIpcHandlers()
   await createWindow()
   // 当日首开自动生成日报（spec §11.1）+ 每日备份——后台执行，不阻塞窗口

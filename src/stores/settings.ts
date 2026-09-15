@@ -7,6 +7,7 @@ export interface SettingsPayload {
   hasApiKey: boolean
   hasSearchKey: boolean
   dataDir: string
+  previousDataDir: string | null
 }
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -14,7 +15,8 @@ export const useSettingsStore = defineStore('settings', () => {
     settings: { ...DEFAULT_SETTINGS },
     hasApiKey: false,
     hasSearchKey: false,
-    dataDir: ''
+    dataDir: '',
+    previousDataDir: null
   })
   const presets = ref<ProviderPreset[]>([])
   const loading = ref(false)
@@ -62,6 +64,7 @@ export const useSettingsStore = defineStore('settings', () => {
   async function openDataDir(): Promise<void> {
     await window.api.settings.openDataDir()
   }
+  async function openPreviousDataDir(): Promise<void> { await window.api.settings.openPreviousDataDir() }
 
   function show(msg: string, ok: boolean): void {
     message.value = msg
@@ -80,6 +83,7 @@ export const useSettingsStore = defineStore('settings', () => {
     fetchModels,
     testConnection,
     openDataDir,
+    openPreviousDataDir,
     show
   }
 })

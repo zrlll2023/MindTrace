@@ -35,6 +35,7 @@
         <select v-model="presetId" @change="onPresetChange">
           <option v-for="p in store.presets" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
+        <p v-if="currentPreset?.note" class="hint">{{ currentPreset.note }}</p>
       </div>
 
       <div class="field">
@@ -47,7 +48,7 @@
         <div class="row">
           <input v-model="form.model" placeholder="例如 deepseek-chat" list="model-list" />
           <button class="secondary" :disabled="fetchingModels" @click="onFetchModels">
-            {{ fetchingModels ? '拉取中…' : '拉取模型列表' }}
+            {{ fetchingModels ? '刷新中…' : '刷新账户可用模型' }}
           </button>
         </div>
         <datalist id="model-list">
@@ -121,20 +122,6 @@
       </div>
     </div>
 
-    <!-- 导入 -->
-    <div class="card">
-      <h3>导入 AI 对话</h3>
-      <p class="hint">
-        支持导入 ChatGPT / Claude 官方数据导出 ZIP（设置 → Data Controls → Export）。
-        对话将按条目存入时间线（类型：对话），自动去重，可重复导入。
-      </p>
-      <button class="secondary" :disabled="importing" @click="onImport">
-        <Icon name="inbox" :size="15" />
-        {{ importing ? '导入中…' : '选择导出 ZIP 并导入' }}
-      </button>
-      <p v-if="importMsg" :class="importOk ? 'msg ok' : 'msg err'">{{ importMsg }}</p>
-    </div>
-
     <!-- 数据 -->
     <div class="card">
       <h3>数据</h3>
@@ -146,12 +133,21 @@
       <button class="secondary" @click="store.openDataDir()">
         <Icon name="folder" :size="15" />打开数据目录
       </button>
+      <button class="secondary" @click="chooseDataDir"><Icon name="folder" :size="15" />更换数据目录</button>
+      <button v-if="store.payload.previousDataDir" class="ghost" @click="store.openPreviousDataDir()">打开迁移前目录</button>
+      <div v-if="migrationTarget" class="migration-box">
+        <div><b>目标目录</b><code class="path">{{ migrationTarget }}</code></div>
+        <p :class="migrationCheck?.ok ? 'msg ok' : 'msg err'">{{ migrationText }}</p>
+        <label v-if="migrationCheck?.ok" class="checkbox"><input v-model="migrationConfirmed" type="checkbox" />我已核对目标目录，确认复制并校验全部数据</label>
+        <button v-if="migrationCheck?.ok" class="primary" :disabled="!migrationConfirmed || migrating" @click="migrateNow">{{ migrating ? '迁移校验中…' : '确认迁移' }}</button>
+      </div>
+      <div v-if="restartRequired" class="card accent"><b>迁移完成</b><p>旧目录仍保留。重启后启用新目录。</p><button class="primary" @click="restartApp">立即重启</button></div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, reactive } from 'vue'
+import { computed, onMounted, ref, reactive } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 import { useThemeStore, ThemeMode } from '../stores/theme'
 import { AppSettings, DEFAULT_SETTINGS } from '../../electron/types'
@@ -170,6 +166,7 @@ const presetId = ref('deepseek')
 const apiKey = ref('')
 const searchKey = ref('')
 const models = ref<string[]>([])
+const currentPreset = computed(() => store.presets.find(p => p.id === presetId.value))
 const fetchingModels = ref(false)
 const saving = ref(false)
 const testing = ref(false)
@@ -178,22 +175,20 @@ onMounted(async () => {
   await store.load()
   Object.assign(form, store.payload.settings)
   const p = store.presets.find(p => p.id === form.providerId)
-  if (p) presetId.value = p.id
+  if (p) { presetId.value = p.id; models.value = [...p.models] }
 })
 
 function onPresetChange(): void {
   const p = store.presets.find(p => p.id === presetId.value)
   if (p && p.baseUrl) form.baseUrl = p.baseUrl
+  models.value = p ? [...p.models] : []
+  if (models.value.length && !models.value.includes(form.model)) form.model = models.value[0]
   form.providerId = presetId.value
 }
 
 async function onFetchModels(): Promise<void> {
   if (!form.baseUrl.trim()) {
     store.show('请先填写 Base URL', false)
-    return
-  }
-  if (!apiKey.value.trim() && !store.payload.hasApiKey) {
-    store.show('请先填写 API Key 再拉取模型列表', false)
     return
   }
   fetchingModels.value = true
@@ -226,10 +221,6 @@ async function onTest(): Promise<void> {
   }
 }
 
-const importing = ref(false)
-const importMsg = ref('')
-const importOk = ref(false)
-
 // ---------- 语义搜索 ----------
 const indexing = ref(false)
 const indexMsg = ref('')
@@ -259,22 +250,12 @@ async function onIndex(): Promise<void> {
   }
 }
 
-async function onImport(): Promise<void> {
-  importing.value = true
-  importMsg.value = ''
-  try {
-    const r = await window.api.import.exportZip()
-    if (r.ok && r.summary) {
-      importOk.value = true
-      importMsg.value = `✅ 导入完成：${r.summary.conversations} 个会话，新增 ${r.summary.imported} 条，跳过重复 ${r.summary.skipped} 条`
-    } else if (!r.canceled) {
-      importOk.value = false
-      importMsg.value = `❌ ${r.error || '导入失败'}`
-    }
-  } finally {
-    importing.value = false
-  }
-}
+const migrationTarget=ref(''),migrationCheck=ref<{ok:boolean;error?:string;bytes:number;freeBytes:number}|null>(null),migrationConfirmed=ref(false),migrating=ref(false),restartRequired=ref(false)
+const formatSize=(n:number)=>n<1024*1024?`${Math.ceil(n/1024)} KB`:`${(n/1024/1024).toFixed(1)} MB`
+const migrationText=computed(()=>migrationCheck.value?.ok?`可迁移 ${formatSize(migrationCheck.value.bytes)}，目标磁盘剩余 ${formatSize(migrationCheck.value.freeBytes)}`:migrationCheck.value?.error??'')
+async function chooseDataDir(){const r=await window.api.settings.selectDataDir();if(r.canceled)return;migrationTarget.value=r.path;migrationConfirmed.value=false;migrationCheck.value=await window.api.settings.inspectDataMigration(r.path)}
+async function migrateNow(){if(!migrationConfirmed.value)return;migrating.value=true;try{const r=await window.api.settings.migrateData(migrationTarget.value);restartRequired.value=!!r.ok}catch(e){migrationCheck.value={ok:false,error:(e as Error).message,bytes:0,freeBytes:0}}finally{migrating.value=false}}
+function restartApp(){void window.api.settings.restart()}
 </script>
 
 <style scoped>
@@ -316,4 +297,5 @@ async function onImport(): Promise<void> {
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: var(--r); padding: 7px 10px; word-break: break-all;
 }
+.migration-box{margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2)}
 </style>

@@ -10,6 +10,7 @@ describe('parseExportZip', () => {
     const json = JSON.stringify([
       {
         title: 't',
+        id: 'chatgpt-conversation-1',
         create_time: 1757894400,
         mapping: {
           a: {
@@ -26,12 +27,14 @@ describe('parseExportZip', () => {
     const out = parseExportZip(zip)
     expect(out).toHaveLength(1)
     expect(out[0].source).toBe('chatgpt')
+    expect(out[0].externalId).toBe('chatgpt-conversation-1')
   })
 
   it('识别 Claude 导出（chat_messages 结构）', () => {
     const json = JSON.stringify([
       {
         name: 't',
+        uuid: 'claude-conversation-1',
         created_at: '2026-09-14T10:00:00Z',
         chat_messages: [{ sender: 'human', text: 'hi', created_at: '2026-09-14T10:00:00Z' }]
       }
@@ -39,6 +42,7 @@ describe('parseExportZip', () => {
     const zip = zipSync({ 'conversations.json': strToU8(json) })
     const out = parseExportZip(zip)
     expect(out[0].source).toBe('claude')
+    expect(out[0].externalId).toBe('claude-conversation-1')
   })
 
   it('无法识别时抛可读错误', () => {
@@ -66,15 +70,17 @@ describe('importConversations', () => {
       }
     ]
     const first = await importConversations(repo, convs)
-    expect(first.imported).toBe(2)
+    expect(first.knowledgeItems).toBe(1)
+    expect(first.timelineSummaries).toBe(1)
     expect(first.skipped).toBe(0)
 
     const second = await importConversations(repo, convs)
-    expect(second.imported).toBe(0)
-    expect(second.skipped).toBe(2)
+    expect(second.knowledgeItems).toBe(0)
+    expect(second.skipped).toBe(1)
 
     const all = await repo.listEntries({ kind: 'conversation' })
-    expect(all).toHaveLength(2)
+    expect(all).toHaveLength(1)
     expect(all[0].source).toBe('import:chatgpt')
+    expect(JSON.parse(all[0].content).kbItemId).toBeTypeOf('number')
   })
 })

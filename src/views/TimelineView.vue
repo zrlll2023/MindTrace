@@ -105,6 +105,7 @@
         </div>
 
         <div class="row">
+          <button v-if="detailKnowledgeId" class="secondary" @click="openKnowledge">查看知识资料</button>
           <button class="primary" @click="saveContent">保存修改</button>
           <button class="danger" @click="removeEntry">删除这条记录</button>
           <span v-if="saved" class="msg ok inline">已保存 ✓</span>
@@ -116,6 +117,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { EntryKind, TimelineFilter } from '../../electron/types'
 import Icon from '../components/Icon.vue'
 import { KIND_PLAIN, kindClass, kindLabel } from '../utils/kinds'
@@ -148,6 +150,11 @@ const hasMore = ref(false)
 const detail = ref<EntryRow | null>(null)
 const detailContentText = ref('')
 const saved = ref(false)
+const router = useRouter()
+const detailKnowledgeId = computed(() => {
+  try { return Number(JSON.parse(detail.value?.content ?? '{}').kbItemId) || 0 } catch { return 0 }
+})
+function openKnowledge(): void { if (detailKnowledgeId.value) void router.push({ path: '/knowledge', query: { itemId: String(detailKnowledgeId.value) } }) }
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 

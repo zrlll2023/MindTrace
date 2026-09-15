@@ -34,10 +34,16 @@ export const routes: NavRoute[] = [
     meta: { nav: true, icon: 'book', label: '知识库', desc: '收录资料，写下原因与感受' }
   },
   {
+    path: '/me',
+    name: 'me',
+    component: () => import('./views/MeView.vue'),
+    meta: { nav: true, icon: 'user', label: '我的', desc: '个人资料与生活趋势' }
+  },
+  {
     path: '/labs',
     name: 'labs',
     component: () => import('./views/LabsView.vue'),
-    meta: { nav: true, icon: 'flask', label: '实验室', desc: '相关性分析与引导式研究' }
+    meta: { nav: true, icon: 'flask', label: '实验室', desc: '探索仍在打磨中的 AI 能力' }
   },
   {
     path: '/settings',

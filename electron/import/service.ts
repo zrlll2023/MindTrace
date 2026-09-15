@@ -2,6 +2,8 @@ import { unzipSync } from 'fflate'
 import { parseChatGPTExport, ImportedConversation } from './chatgpt'
 import { parseClaudeExport } from './claude'
 import { Repo, NewEntry } from '../db/repository'
+import { KnowledgeBase } from '../db/knowledge'
+import crypto from 'node:crypto'
 
 /** 从导出 ZIP 中提取会话（自动识别 ChatGPT / Claude） */
 export function parseExportZip(zipBytes: Uint8Array): ImportedConversation[] {
@@ -33,53 +35,67 @@ export function parseExportZip(zipBytes: Uint8Array): ImportedConversation[] {
 
 export interface ImportSummary {
   conversations: number
-  imported: number
+  knowledgeItems: number
+  timelineSummaries: number
   skipped: number
 }
 
 const MAX_IMPORT_CONVERSATIONS = 2000
 
-/** 将解析出的会话写入 entries（kind=conversation，按消息粒度去重） */
+function conversationMarkdown(conv: ImportedConversation): string {
+  const lines = [`# ${conv.title}`, '', `- 来源：${conv.source === 'chatgpt' ? 'ChatGPT' : 'Claude'}`, `- 日期：${conv.date}`, `- 消息数：${conv.messages.length}`, '']
+  for (const m of conv.messages) {
+    const time = m.timestamp ? new Date(m.timestamp * 1000).toLocaleString('zh-CN') : ''
+    lines.push(`## ${m.role === 'user' ? '我' : 'AI'}${time ? ` · ${time}` : ''}`, '', m.content, '')
+  }
+  return lines.join('\n')
+}
+
+function importKey(conv: ImportedConversation): string {
+  const normalizedContent = JSON.stringify(conv.messages.map(m => [
+    m.role,
+    m.timestamp,
+    m.content.replace(/\r\n/g, '\n').trim()
+  ]))
+  const contentHash = crypto.createHash('sha256').update(normalizedContent).digest('hex')
+  const conversationId = conv.externalId?.trim() || `${conv.title.trim()}\n${conv.date}`
+  return crypto.createHash('sha256').update(`${conv.source}\0${conversationId}\0${contentHash}`).digest('hex')
+}
+
+/** 每个会话写入一份完整知识资料，并在时间线写一条确定性摘要。 */
 export async function importConversations(
   repo: Repo,
   conversations: ImportedConversation[]
 ): Promise<ImportSummary> {
   const limited = conversations.slice(0, MAX_IMPORT_CONVERSATIONS)
-  const newEntries: (NewEntry & { dedup_key: string })[] = []
-
-  limited.forEach((conv, ci) => {
-    const convKey = `${conv.source}:${ci}:${conv.title}`.slice(0, 120)
-    conv.messages.forEach((m, mi) => {
-      newEntries.push({
-        raw_text: m.content,
-        kind: 'conversation',
-        content: JSON.stringify({
-          text: m.content,
-          with: conv.title,
-          role: m.role,
-          conversation: conv.title
-        }),
-        confidence: 1,
-        source: `import:${conv.source}`,
-        entry_date: conv.date,
-        dedup_key: `${conv.source}:${conv.title}:${m.timestamp ?? mi}:${mi}`.slice(0, 180)
-      })
-      void convKey
-    })
-  })
-
-  const keys = newEntries.map(e => e.dedup_key)
-  const existing = await repo.existingDedupKeys(keys)
-  const toInsert = newEntries.filter(e => !existing.has(e.dedup_key))
-
-  for (const e of toInsert) {
-    await repo.insertEntry(e)
+  const db = repo.getDb()
+  const kb = new KnowledgeBase(db)
+  const folder = kb.ensureSystemFolder('ai_conversation_import', 'AI 对话导入')
+  let imported = 0
+  let skipped = 0
+  db.run('BEGIN')
+  try {
+    for (const conv of limited) {
+      const key = importKey(conv)
+      const found = db.exec('SELECT id FROM kb_items WHERE import_key = ?', [key])
+      if (found.length) { skipped++; continue }
+      const body = conversationMarkdown(conv)
+      const item = kb.addItem({ folderId: folder.id, title: conv.title.slice(0, 200), sourceType: 'ai-conversation', body, importKey: key })
+      const excerpt = conv.messages.find(m => m.role === 'user')?.content.replace(/\s+/g, ' ').slice(0, 160) ?? ''
+      const summary = `导入 ${conv.source === 'chatgpt' ? 'ChatGPT' : 'Claude'} 会话《${conv.title}》，共 ${conv.messages.length} 条消息。${excerpt}`
+      const entry: NewEntry = {
+        raw_text: summary, kind: 'conversation', confidence: 1, source: `import:${conv.source}`,
+        entry_date: conv.date, dedup_key: `conversation:${key}`,
+        content: JSON.stringify({ text: summary, conversation: conv.title, messageCount: conv.messages.length, kbItemId: item.id })
+      }
+      await repo.insertEntry(entry)
+      imported++
+    }
+    db.run('COMMIT')
+    repo.save()
+  } catch (error) {
+    db.run('ROLLBACK')
+    throw error
   }
-  repo.save()
-
-  return {
-    conversations: limited.length,
-    imported: toInsert.length,
-    skipped: newEntries.length - toInsert.length
-  }
+  return { conversations: limited.length, knowledgeItems: imported, timelineSummaries: imported, skipped }
 }

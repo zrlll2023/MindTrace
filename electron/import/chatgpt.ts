@@ -12,6 +12,7 @@ export interface ImportedMessage {
 
 export interface ImportedConversation {
   source: 'chatgpt' | 'claude'
+  externalId?: string
   title: string
   date: string // YYYY-MM-DD（会话开始日期，本地时区）
   messages: ImportedMessage[]
@@ -46,6 +47,7 @@ export function parseChatGPTExport(jsonText: string): ImportedConversation[] {
 
   const out: ImportedConversation[] = []
   for (const conv of data as Array<Record<string, unknown>>) {
+    const externalId = typeof conv.id === 'string' ? conv.id : undefined
     const title = typeof conv.title === 'string' ? conv.title : '未命名会话'
     const createTime = typeof conv.create_time === 'number' ? conv.create_time : null
     const mapping = conv.mapping as Record<
@@ -74,6 +76,7 @@ export function parseChatGPTExport(jsonText: string): ImportedConversation[] {
 
     out.push({
       source: 'chatgpt',
+      externalId,
       title,
       date: unixToLocalDate(createTime ?? messages[0]?.timestamp),
       messages

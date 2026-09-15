@@ -12,7 +12,11 @@
       <button class="secondary" @click="creatingFolder = true">
         <Icon name="plus" :size="15" />新建文件夹
       </button>
+      <button class="secondary" :disabled="importingConversations" @click="importConversations">
+        <Icon name="inbox" :size="15" />{{ importingConversations ? '导入中…' : '导入 AI 对话' }}
+      </button>
     </div>
+    <p v-if="importMessage" :class="importOk ? 'msg ok' : 'msg err'">{{ importMessage }}</p>
 
     <div class="kb-body">
       <!-- 文件夹列表 -->
@@ -165,12 +169,14 @@
 
 <script setup lang="ts">
 import { onMounted, ref, reactive } from 'vue'
+import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
 
 interface KbFolder {
   id: number
   name: string
   description: string
+  system_key: string | null
   created_at: string
 }
 interface KbItem {
@@ -183,11 +189,14 @@ interface KbItem {
   reason: string
   reflection: string
   ai_summary: string
+  source_entry_id: number | null
+  import_key: string | null
   created_at: string
   updated_at: string
 }
 
 const folders = ref<KbFolder[]>([])
+const route = useRoute()
 const currentFolder = ref<KbFolder | null>(null)
 const items = ref<KbItem[]>([])
 
@@ -205,6 +214,9 @@ const summarizing = ref(false)
 
 const extending = ref(false)
 const extendResult = ref('')
+const importingConversations = ref(false)
+const importMessage = ref('')
+const importOk = ref(false)
 
 const TYPE_LABELS: Record<string, string> = {
   markdown: 'Markdown',
@@ -214,7 +226,9 @@ const TYPE_LABELS: Record<string, string> = {
   htm: '网页',
   docx: 'Word',
   pptx: 'PPT',
-  xlsx: 'Excel'
+  xlsx: 'Excel',
+  'ai-conversation': 'AI 对话',
+  entry: '记录'
 }
 function typeLabel(t: string): string {
   return TYPE_LABELS[t] ?? t
@@ -272,6 +286,24 @@ async function importFiles(): Promise<void> {
   if (r.ok) {
     items.value = await window.api.kb.listItems(currentFolder.value.id)
   }
+}
+
+async function importConversations(): Promise<void> {
+  importingConversations.value = true
+  importMessage.value = ''
+  try {
+    const r = await window.api.import.exportZip()
+    if (r.ok && r.summary) {
+      importOk.value = true
+      importMessage.value = `导入完成：${r.summary.knowledgeItems} 个完整会话进入知识库，时间线新增 ${r.summary.timelineSummaries} 条摘要，跳过 ${r.summary.skipped} 个重复会话。`
+      await loadFolders()
+      const folder = folders.value.find(f => f.system_key === 'ai_conversation_import')
+      if (folder) await selectFolder(folder)
+    } else if (!r.canceled) {
+      importOk.value = false
+      importMessage.value = `导入失败：${r.error || '无法读取文件'}`
+    }
+  } finally { importingConversations.value = false }
 }
 
 function openItem(it: KbItem): void {
@@ -358,7 +390,16 @@ async function refreshList(): Promise<void> {
   if (currentFolder.value) items.value = await window.api.kb.listItems(currentFolder.value.id)
 }
 
-onMounted(loadFolders)
+onMounted(async () => {
+  await loadFolders()
+  const itemId = Number(route.query.itemId)
+  if (itemId > 0) {
+    const item = await window.api.kb.getItem(itemId)
+    if (!item) { importOk.value = false; importMessage.value = '对应的知识资料已被删除。'; return }
+    const folder = folders.value.find(f => f.id === item.folder_id)
+    if (folder) { await selectFolder(folder); openItem(item) }
+  }
+})
 </script>
 
 <style scoped>

@@ -1,10 +1,28 @@
-import { ipcMain, shell } from 'electron'
+import { app, dialog, ipcMain, shell } from 'electron'
 import { getContext } from '../context'
-import { AppSettings, PROVIDER_PRESETS } from '../types'
-import { parseDumpWith } from '../analysis/parser'
+import { AppSettings, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues } from '../types'
+import { parseCaptureWith } from '../analysis/parser'
 import { desensitizeText } from '../analysis/desensitize'
 import { NewEntry } from '../db/repository'
 import { TimelineFilter } from '../types'
+import { CaptureHistory } from '../db/capture'
+import { KnowledgeBase } from '../db/knowledge'
+import { ProfileStore } from '../db/profile'
+import { inspectMigration, migrateData, previousDataDir } from '../store/data-location'
+
+interface KnowledgeChoice { addToKnowledge?: boolean; folderId?: number; newFolderName?: string; reason?: string }
+interface CaptureChoice extends KnowledgeChoice { kind: string; content: object; confidence: number }
+
+function knowledgeText(kind: string, content: Record<string, unknown>, raw: string): string {
+  if (typeof content.text === 'string') return content.text
+  return raw || JSON.stringify(content, null, 2)
+}
+
+function knowledgeTitle(kind: string, text: string): string {
+  const names: Record<string, string> = { event: '事件', conversation: '对话', quote: '句子', idea: '想法', other: '记录' }
+  const compact = text.replace(/\s+/g, ' ').trim()
+  return `${names[kind] ?? '记录'}：${compact.slice(0, 48) || '未命名'}`
+}
 
 /** 统一构建分析引擎（脱敏/联网搜索/语义检索配置一次注入） */
 async function buildEngine(c: ReturnType<typeof getContext>) {
@@ -33,7 +51,8 @@ export function registerIpcHandlers(): void {
       settings: c.getSettings(),
       hasApiKey: c.secrets.get('llm_api_key') != null,
       hasSearchKey: c.secrets.get('search_api_key') != null,
-      dataDir: c.dataDir
+      dataDir: c.dataDir,
+      previousDataDir: previousDataDir(app.getPath('userData'))
     }
   })
 
@@ -56,6 +75,22 @@ export function registerIpcHandlers(): void {
     const c = getContext()
     await shell.openPath(c.dataDir)
   })
+  ipcMain.handle('settings:openPreviousDataDir', async () => {
+    const old = previousDataDir(app.getPath('userData'))
+    if (old) await shell.openPath(old)
+  })
+  ipcMain.handle('settings:selectDataDir', async () => {
+    const r = await dialog.showOpenDialog({ title: '选择新的 MindTrace 数据目录', properties: ['openDirectory', 'createDirectory'] })
+    return r.canceled || !r.filePaths.length ? { canceled: true } : { canceled: false, path: r.filePaths[0] }
+  })
+  ipcMain.handle('settings:inspectDataMigration', (_e, target: string) => inspectMigration(getContext().dataDir, target))
+  ipcMain.handle('settings:migrateData', (_e, target: string) => {
+    const c = getContext()
+    c.repo.save()
+    migrateData(c.dataDir, target, app.getPath('userData'))
+    return { ok: true, requiresRestart: true }
+  })
+  ipcMain.handle('settings:restart', () => { app.relaunch(); app.exit(0) })
 
   ipcMain.handle('settings:getPresets', () => PROVIDER_PRESETS)
 
@@ -66,7 +101,6 @@ export function registerIpcHandlers(): void {
     const key = apiKey || c.secrets.get('llm_api_key') || ''
     const url = (baseUrl || c.getSettings().baseUrl || '').trim()
     if (!url) return { ok: false, error: '请先填写 Base URL', models: [] }
-    if (!key) return { ok: false, error: '请先填写 API Key 再拉取模型列表', models: [] }
     try {
       const { LLMAdapter } = await import('../adapters/llm.js')
       const llm = new LLMAdapter({ baseUrl: url, apiKey: key, model: 'probe' })
@@ -90,27 +124,44 @@ export function registerIpcHandlers(): void {
   )
 
   // ---------- capture ----------
+  ipcMain.handle('capture:list', () => new CaptureHistory(getContext().repo.getDb()).list())
   ipcMain.handle('capture:parse', async (_e, raw: string) => {
     const c = getContext()
     const llm = c.getLlm()
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商', parsed: [] }
+    const history = new CaptureHistory(c.repo.getDb())
+    const prior = history.context().map(m => ({ ...m, content: c.getSettings().desensitize ? desensitizeText(m.content) : m.content }))
+    history.add('user', raw)
     try {
-      // 出网脱敏（spec §8）：掩码后的文本仅用于解析；本地存的 raw_text 始终是原文
       const outgoing = c.getSettings().desensitize ? desensitizeText(raw) : raw
-      const parsed = await parseDumpWith(llm, outgoing)
-      return { ok: true, parsed }
+      const profile = new ProfileStore(c.repo.getDb()).values()
+      const result = await parseCaptureWith(llm, outgoing, prior, profile)
+      const msg = history.add('assistant', '我解析出了以下内容，请确认：', { parsed: result.entries, profileDraft: result.profileDraft })
+      const folder = new KnowledgeBase(c.repo.getDb()).ensureSystemFolder('ai_quick_capture', 'AI 快速记录')
+      c.repo.save()
+      return { ok: true, message: msg, defaultFolderId: folder.id }
     } catch (e) {
-      return { ok: false, error: (e as Error).message, parsed: [] }
+      const msg = history.add('assistant', '', { error: (e as Error).message })
+      c.repo.save()
+      return { ok: false, error: (e as Error).message, message: msg, parsed: [] }
     }
   })
 
   ipcMain.handle(
     'capture:commit',
-    async (_e, raw: string, entries: { kind: string; content: object; confidence: number }[]) => {
+    async (_e, messageId: number, entries: CaptureChoice[]) => {
       const c = getContext()
+      const db = c.repo.getDb()
       try {
         const { validateParsedEntry } = await import('../analysis/validators.js')
+        const history = new CaptureHistory(db)
+        const messages = history.list()
+        const assistantIndex = messages.findIndex(m => m.id === messageId && m.role === 'assistant')
+        if (assistantIndex <= 0 || messages[assistantIndex].committed) throw new Error('待确认的 AI 解析结果不存在或已归档')
+        const raw = assistantIndex > 0 ? [...messages.slice(0, assistantIndex)].reverse().find(m => m.role === 'user')?.text ?? '' : ''
         const saved = [] as Awaited<ReturnType<typeof c.repo.insertEntry>>[]
+        const kb = new KnowledgeBase(db)
+        db.run('BEGIN')
         for (const entry of entries) {
           // 契约闸门：非法条目兜底为 other/confidence=0，绝不丢用户原文
           const v = validateParsedEntry(entry)
@@ -124,15 +175,31 @@ export function registerIpcHandlers(): void {
             confidence,
             source: 'chat'
           }
-          saved.push(await c.repo.insertEntry(e))
+          const savedEntry = await c.repo.insertEntry(e)
+          saved.push(savedEntry)
+          if (kind !== 'sleep' && entry.addToKnowledge) {
+            const folderId = entry.folderId ?? kb.ensureSystemFolder('ai_quick_capture', 'AI 快速记录').id
+            if (!kb.listFolders().some(f => f.id === folderId)) throw new Error('选择的知识库文件夹不存在')
+            const body = knowledgeText(kind, content, raw)
+            kb.addItem({ folderId, title: knowledgeTitle(kind, body), sourceType: 'entry', body, reason: entry.reason, sourceEntryId: savedEntry.id })
+          }
         }
+        history.markCommitted(messageId)
+        db.run('COMMIT')
         c.repo.save()
         return { ok: true, entries: saved }
       } catch (err) {
+        try { db.run('ROLLBACK') } catch { /* no active transaction */ }
         return { ok: false, error: (err as Error).message }
       }
     }
   )
+  ipcMain.handle('capture:clear', () => {
+    const c = getContext()
+    new CaptureHistory(c.repo.getDb()).clear()
+    c.repo.save()
+    return { ok: true }
+  })
 
   // ---------- timeline ----------
   ipcMain.handle('timeline:list', (_e, filter: TimelineFilter) =>
@@ -153,8 +220,9 @@ export function registerIpcHandlers(): void {
     return { ok: true }
   })
   // 手动直录（不经 AI）：与 capture:commit 同一契约闸门入库，source=manual
-  ipcMain.handle('entries:manual', async (_e, kind: string, content: object, rawText: string, entryDate?: string) => {
+  ipcMain.handle('entries:manual', async (_e, kind: string, content: object, rawText: string, entryDate?: string, knowledge?: KnowledgeChoice) => {
     const c = getContext()
+    const db = c.repo.getDb()
     try {
       const { validateParsedEntry, KIND_VALUES } = require('../analysis/validators.js') as typeof import('../analysis/validators')
       if (!KIND_VALUES.includes(kind as never)) {
@@ -162,6 +230,7 @@ export function registerIpcHandlers(): void {
       }
       const v = validateParsedEntry({ kind, content, confidence: 1 })
       if (!v.ok || !v.entry) return { ok: false, error: v.reason ?? '内容校验未通过' }
+      db.run('BEGIN')
       const entry = await c.repo.insertEntry({
         raw_text: rawText || JSON.stringify(content),
         kind: v.entry.kind,
@@ -170,10 +239,47 @@ export function registerIpcHandlers(): void {
         source: 'manual',
         ...(entryDate ? { entry_date: entryDate } : {})
       })
+      if (kind !== 'sleep' && knowledge?.addToKnowledge) {
+        const kb = new KnowledgeBase(db)
+        const folderId = knowledge.folderId ?? (knowledge.newFolderName?.trim() ? kb.addFolder(knowledge.newFolderName.trim()).id : 0)
+        if (!folderId) throw new Error('请选择或创建知识库文件夹')
+        if (!kb.listFolders().some(f => f.id === folderId)) throw new Error('选择的知识库文件夹不存在')
+        const body = knowledgeText(kind, v.entry.content, rawText)
+        kb.addItem({ folderId, title: knowledgeTitle(kind, body), sourceType: 'entry', body, reason: knowledge.reason, sourceEntryId: entry.id })
+      }
+      db.run('COMMIT')
       c.repo.save()
       return { ok: true, id: entry.id }
     } catch (e) {
+      try { db.run('ROLLBACK') } catch { /* no active transaction */ }
       return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('profile:get', () => new ProfileStore(getContext().repo.getDb()).get())
+  ipcMain.handle('profile:save', (_e, values: ProfileValues) => {
+    const c = getContext(); new ProfileStore(c.repo.getDb()).saveManual(values); c.repo.save(); return { ok: true }
+  })
+  ipcMain.handle('profile:confirmDraft', (_e, messageId: number, values: ProfileValues) => {
+    const c = getContext()
+    const db = c.repo.getDb()
+    const message = new CaptureHistory(db).list().find(m => m.id === messageId && m.role === 'assistant')
+    if (!message?.profileDraft) return { ok: false, error: '待确认的资料草稿不存在' }
+    const accepted: ProfileValues = {}
+    for (const key of PROFILE_KEYS) {
+      const proposed = message.profileDraft[key]?.trim()
+      if (proposed && values[key]?.trim() === proposed) accepted[key] = proposed
+    }
+    try {
+      db.run('BEGIN')
+      new ProfileStore(db).confirmDraft(accepted)
+      db.run('UPDATE capture_messages SET profile_draft_json = NULL WHERE id = ?', [messageId])
+      db.run('COMMIT')
+      c.repo.save()
+      return { ok: true }
+    } catch (error) {
+      try { db.run('ROLLBACK') } catch { /* no active transaction */ }
+      return { ok: false, error: (error as Error).message }
     }
   })
 

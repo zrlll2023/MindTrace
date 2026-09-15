@@ -3,6 +3,7 @@ import { parseClaudeExport } from '../../electron/import/claude'
 
 const SAMPLE = JSON.stringify([
   {
+    uuid: 'claude-vector-1',
     name: '向量数据库选型',
     created_at: '2026-09-14T10:30:00.000Z',
     chat_messages: [
@@ -18,6 +19,7 @@ describe('parseClaudeExport', () => {
     expect(out).toHaveLength(1)
     expect(out[0].source).toBe('claude')
     expect(out[0].title).toBe('向量数据库选型')
+    expect(out[0].externalId).toBe('claude-vector-1')
     expect(out[0].date).toBe('2026-09-14')
     expect(out[0].messages).toHaveLength(2)
     expect(out[0].messages[0].role).toBe('user')

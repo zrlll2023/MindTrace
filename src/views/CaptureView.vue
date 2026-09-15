@@ -65,6 +65,20 @@
             <input v-model="manualDate" type="date" />
           </div>
         </div>
+        <div class="knowledge-choice">
+          <label class="checkbox"><input v-model="manualToKnowledge" type="checkbox" />同时加入知识库</label>
+          <div v-if="manualToKnowledge" class="row knowledge-fields">
+            <select v-if="!manualNewFolder" v-model.number="manualFolderId" class="grow">
+              <option :value="0" disabled>选择文件夹</option>
+              <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+            </select>
+            <input v-else v-model="manualNewFolderName" class="grow" placeholder="新文件夹名称" />
+            <button class="secondary small" type="button" @click="manualNewFolder = !manualNewFolder">
+              {{ manualNewFolder ? '选择已有' : '新建文件夹' }}
+            </button>
+            <input v-model="manualKnowledgeReason" class="grow" placeholder="收录原因（可选）" />
+          </div>
+        </div>
       </template>
 
       <div class="row">
@@ -77,6 +91,10 @@
 
     <!-- ========== AI 快速记录 ========== -->
     <div v-else class="capture">
+      <div class="chat-tools">
+        <span class="hint">本次对话会保存在本机，AI 会结合最近上下文理解你的记录。</span>
+        <button class="ghost small" type="button" @click="clearConversation">清空并新建</button>
+      </div>
       <div class="messages" ref="listEl">
         <div v-if="!store.messages.length" class="empty">
           <h3>今天怎么样？</h3>
@@ -102,10 +120,27 @@
                   :entry="p"
                   @remove="m.parsed!.splice(j, 1)"
                 />
-                <button class="primary" :disabled="!m.parsed?.length" @click="confirm(m)">
+                <div v-for="(p, j) in m.parsed" :key="`kb-${j}`" class="ai-kb-choice">
+                  <label v-if="p.kind !== 'sleep'" class="checkbox">
+                    <input v-model="p.addToKnowledge" type="checkbox" />加入知识库
+                  </label>
+                  <select v-if="p.kind !== 'sleep' && p.addToKnowledge" v-model.number="p.folderId">
+                    <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+                  </select>
+                </div>
+                <button class="primary" :disabled="!m.parsed?.length" @click="archiveMessage(m)">
                   <Icon name="check" :size="15" />确认归档（{{ m.parsed?.length }} 条）
                 </button>
               </template>
+              <div v-if="m.profileDraft && Object.keys(m.profileDraft).length" class="profile-draft">
+                <strong>AI 识别到一些个人资料</strong>
+                <p class="hint">确认后只补充“我的”页面中的空字段，不会覆盖手动填写内容。</p>
+                <label v-for="(value, key) in m.profileDraft" :key="key" class="draft-field">
+                  <input type="checkbox" :checked="draftSelected(m.id, key)" @change="toggleDraft(m.id, key)" />
+                  <span><b>{{ profileLabel(key) }}：</b>{{ value }}</span>
+                </label>
+                <button class="secondary small" @click="confirmProfile(m)">{{ hasSelectedDraft(m) ? '确认所选资料' : '不采用资料草稿' }}</button>
+              </div>
             </template>
           </div>
         </div>
@@ -134,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, reactive } from 'vue'
 import { useCaptureStore, ChatMessageItem } from '../stores/capture'
 import EntryCard from '../components/EntryCard.vue'
 import Icon from '../components/Icon.vue'
@@ -145,6 +180,8 @@ const store = useCaptureStore()
 const listEl = ref<HTMLElement>()
 
 const mode = ref<'manual' | 'ai'>('manual')
+interface Folder { id: number; name: string; system_key?: string | null }
+const folders = ref<Folder[]>([])
 
 // ---------- 手动录入 ----------
 const manualKind = ref<EntryKind>('event')
@@ -159,6 +196,11 @@ const manualDate = ref(new Date().toISOString().slice(0, 10))
 const manualSaving = ref(false)
 const manualMsg = ref('')
 const manualOk = ref(false)
+const manualToKnowledge = ref(false)
+const manualFolderId = ref(0)
+const manualNewFolder = ref(false)
+const manualNewFolderName = ref('')
+const manualKnowledgeReason = ref('')
 
 const manualPlaceholder = computed(() => {
   const m: Partial<Record<EntryKind, string>> = {
@@ -189,14 +231,24 @@ async function saveManual(): Promise<void> {
             ? { text: manualText.value.trim(), negative: manualNegative.value }
             : { text: manualText.value.trim() }
     const rawText = manualKind.value === 'sleep' ? `睡了${manualHours.value}小时` : manualText.value.trim()
-    const r = await window.api.entries.manual(manualKind.value, content, rawText, manualDate.value || undefined)
+    const knowledge = manualToKnowledge.value ? {
+      addToKnowledge: true,
+      folderId: manualNewFolder.value ? undefined : manualFolderId.value,
+      newFolderName: manualNewFolder.value ? manualNewFolderName.value : undefined,
+      reason: manualKnowledgeReason.value
+    } : undefined
+    const r = await window.api.entries.manual(manualKind.value, content, rawText, manualDate.value || undefined, knowledge)
     if (r.ok) {
       manualOk.value = true
-      manualMsg.value = '✅ 已保存到时间线'
+      manualMsg.value = manualToKnowledge.value ? '已保存到时间线和知识库' : '已保存到时间线'
       manualText.value = ''
       manualHours.value = null
       manualFrom.value = ''
       manualNegative.value = false
+      manualToKnowledge.value = false
+      manualNewFolderName.value = ''
+      manualKnowledgeReason.value = ''
+      await loadFolders()
     } else {
       manualOk.value = false
       manualMsg.value = `❌ ${r.error}`
@@ -208,12 +260,47 @@ async function saveManual(): Promise<void> {
 }
 
 // ---------- AI 快速记录 ----------
-function submit(): void {
-  void store.send(store.input)
+async function submit(): Promise<void> {
+  await store.send(store.input)
+  await loadFolders()
 }
 
-async function confirm(m: ChatMessageItem): Promise<void> {
+async function archiveMessage(m: ChatMessageItem): Promise<void> {
   if (m.parsed) await store.commit(m, m.parsed)
+}
+
+async function loadFolders(): Promise<void> {
+  folders.value = await window.api.kb.listFolders()
+  const aiFolder = folders.value.find(f => f.system_key === 'ai_quick_capture')
+  if (aiFolder) {
+    store.defaultFolderId = aiFolder.id
+    if (!manualFolderId.value) manualFolderId.value = aiFolder.id
+    for (const m of store.messages) for (const p of m.parsed ?? []) if (p.kind !== 'sleep' && !p.folderId) p.folderId = aiFolder.id
+  }
+}
+
+async function clearConversation(): Promise<void> {
+  if (!window.confirm('确定清空当前 AI 快速记录对话并新建吗？已经归档的记录和知识资料不会删除。')) return
+  await store.clear()
+}
+
+const PROFILE_LABELS: Record<string, string> = { name: '名称', preferredName: '称呼', identity: '职业/身份', location: '所在地', bio: '个人简介', goals: '关注目标', interests: '兴趣' }
+function profileLabel(key: string): string { return PROFILE_LABELS[key] ?? key }
+const draftSelections = reactive<Record<number, Record<string, boolean>>>({})
+function draftSelected(messageId: number, key: string): boolean { return draftSelections[messageId]?.[key] !== false }
+function toggleDraft(messageId: number, key: string): void {
+  const selections = draftSelections[messageId] ?? (draftSelections[messageId] = {})
+  selections[key] = !draftSelected(messageId, key)
+}
+function hasSelectedDraft(m: ChatMessageItem): boolean {
+  return Object.keys(m.profileDraft ?? {}).some(key => draftSelected(m.id, key))
+}
+async function confirmProfile(m: ChatMessageItem): Promise<void> {
+  if (!m.profileDraft) return
+  const selected = Object.fromEntries(Object.entries(m.profileDraft).filter(([key]) => draftSelected(m.id, key)))
+  const result = await window.api.profile.confirmDraft(m.id, selected)
+  if (result.ok) m.profileDraft = undefined
+  else m.error = result.error
 }
 
 watch(
@@ -224,9 +311,11 @@ watch(
   }
 )
 
-onMounted(() => {
+onMounted(async () => {
   const s = localStorage.getItem('mt-capture-mode')
   if (s === 'ai' || s === 'manual') mode.value = s
+  await store.load()
+  await loadFolders()
 })
 watch(mode, v => localStorage.setItem('mt-capture-mode', v))
 </script>
@@ -248,9 +337,12 @@ watch(mode, v => localStorage.setItem('mt-capture-mode', v))
 }
 .grow { flex: 1; min-width: 140px; }
 .manual .msg { margin: 0; }
+.knowledge-choice { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+.knowledge-fields { margin-top: 9px; }
 
 /* AI 聊天 */
 .capture { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.chat-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; }
 .messages { flex: 1; overflow-y: auto; padding: 4px 4px 8px; }
 .empty { margin-top: 8vh; }
 .empty h3 { font-family: var(--font-serif); font-size: 19px; color: var(--text); }
@@ -272,6 +364,12 @@ watch(mode, v => localStorage.setItem('mt-capture-mode', v))
 .chat-msg.assistant .bubble { min-width: 320px; }
 .bubble .primary { margin-top: 8px; }
 .err { color: var(--danger); font-size: 13px; }
+.ai-kb-choice { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; font-size: 12px; }
+.ai-kb-choice select { width: auto; min-width: 160px; padding: 5px 8px; }
+.profile-draft { margin: 10px 0; padding: 10px 12px; background: var(--accent-weak); border-radius: var(--r); font-size: 12.5px; }
+.draft-field { display: flex; align-items: flex-start; gap: 7px; margin: 7px 0; }
+.draft-field input { width: auto; margin-top: 2px; }
+.profile-draft .small { margin-top: 8px; }
 
 .typing { color: var(--text-3); display: flex; align-items: center; gap: 8px; }
 .dots { display: inline-flex; gap: 3px; }

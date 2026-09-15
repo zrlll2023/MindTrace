@@ -163,6 +163,7 @@ function migrate(db: Database): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     description TEXT DEFAULT '',
+    system_key TEXT,
     created_at TEXT DEFAULT (datetime('now', 'localtime'))
   )`)
   db.run(`CREATE TABLE IF NOT EXISTS kb_items (
@@ -175,7 +176,42 @@ function migrate(db: Database): void {
     reason TEXT DEFAULT '',
     reflection TEXT DEFAULT '',
     ai_summary TEXT DEFAULT '',
+    source_entry_id INTEGER,
+    import_key TEXT,
     created_at TEXT DEFAULT (datetime('now', 'localtime')),
     updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+  )`)
+
+  const folderCols = db.exec('PRAGMA table_info(kb_folders)')
+  if (folderCols.length && !folderCols[0].values.some(v => v[1] === 'system_key')) {
+    db.run('ALTER TABLE kb_folders ADD COLUMN system_key TEXT')
+  }
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_folders_system_key ON kb_folders(system_key) WHERE system_key IS NOT NULL')
+
+  const itemCols = db.exec('PRAGMA table_info(kb_items)')
+  if (itemCols.length && !itemCols[0].values.some(v => v[1] === 'source_entry_id')) {
+    db.run('ALTER TABLE kb_items ADD COLUMN source_entry_id INTEGER')
+  }
+  if (itemCols.length && !itemCols[0].values.some(v => v[1] === 'import_key')) {
+    db.run('ALTER TABLE kb_items ADD COLUMN import_key TEXT')
+  }
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_items_import_key ON kb_items(import_key) WHERE import_key IS NOT NULL')
+
+  db.run(`CREATE TABLE IF NOT EXISTS capture_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+    text TEXT NOT NULL DEFAULT '',
+    parsed_json TEXT,
+    profile_draft_json TEXT,
+    committed INTEGER NOT NULL DEFAULT 0,
+    error TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  )`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS profile_fields (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('manual','ai')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   )`)
 }

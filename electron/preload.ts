@@ -6,6 +6,11 @@ const api = {
     save: (settings: unknown, apiKey?: string, searchKey?: string) =>
       ipcRenderer.invoke('settings:save', settings, apiKey, searchKey),
     openDataDir: () => ipcRenderer.invoke('settings:openDataDir'),
+    openPreviousDataDir: () => ipcRenderer.invoke('settings:openPreviousDataDir'),
+    selectDataDir: () => ipcRenderer.invoke('settings:selectDataDir'),
+    inspectDataMigration: (target: string) => ipcRenderer.invoke('settings:inspectDataMigration', target),
+    migrateData: (target: string) => ipcRenderer.invoke('settings:migrateData', target),
+    restart: () => ipcRenderer.invoke('settings:restart'),
     getPresets: () => ipcRenderer.invoke('settings:getPresets')
   },
   llm: {
@@ -15,12 +20,14 @@ const api = {
       ipcRenderer.invoke('llm:testConnection', baseUrl, apiKey, model)
   },
   capture: {
+    list: () => ipcRenderer.invoke('capture:list'),
     parse: (raw: string) => ipcRenderer.invoke('capture:parse', raw),
-    commit: (raw: string, entries: unknown[]) => ipcRenderer.invoke('capture:commit', raw, entries)
+    commit: (messageId: number, entries: unknown[]) => ipcRenderer.invoke('capture:commit', messageId, entries),
+    clear: () => ipcRenderer.invoke('capture:clear')
   },
   entries: {
-    manual: (kind: string, content: object, rawText: string, entryDate?: string) =>
-      ipcRenderer.invoke('entries:manual', kind, content, rawText, entryDate),
+    manual: (kind: string, content: object, rawText: string, entryDate?: string, knowledge?: unknown) =>
+      ipcRenderer.invoke('entries:manual', kind, content, rawText, entryDate, knowledge),
     remove: (id: number) => ipcRenderer.invoke('timeline:delete', id)
   },
   timeline: {
@@ -46,6 +53,11 @@ const api = {
   },
   import: {
     exportZip: () => ipcRenderer.invoke('import:exportZip')
+  },
+  profile: {
+    get: () => ipcRenderer.invoke('profile:get'),
+    save: (values: unknown) => ipcRenderer.invoke('profile:save', values),
+    confirmDraft: (messageId: number, values: unknown) => ipcRenderer.invoke('profile:confirmDraft', messageId, values)
   },
   semantic: {
     search: (query: string, topK?: number) => ipcRenderer.invoke('semantic:search', query, topK),

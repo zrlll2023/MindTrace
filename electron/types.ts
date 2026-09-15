@@ -9,18 +9,23 @@ export interface ProviderPreset {
   id: string
   name: string
   baseUrl: string
+  models: string[]
   note?: string
 }
 
 /** 提供商预设：选中后自动填 baseUrl（spec §7） */
 export const PROVIDER_PRESETS: ProviderPreset[] = [
-  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com' },
-  { id: 'zhipu', name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
-  { id: 'moonshot', name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1' },
-  { id: 'siliconflow', name: 'SiliconFlow 硅基流动', baseUrl: 'https://api.siliconflow.cn/v1' },
-  { id: 'ollama', name: 'Ollama（本机）', baseUrl: 'http://localhost:11434/v1', note: '无需 API Key' },
-  { id: 'custom', name: '自定义', baseUrl: '' }
+  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', models: ['deepseek-chat', 'deepseek-reasoner'] },
+  { id: 'zhipu', name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4.5', 'glm-4.5-flash', 'glm-4-long'] },
+  { id: 'moonshot', name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'] },
+  { id: 'siliconflow', name: 'SiliconFlow 硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct'] },
+  { id: 'ollama', name: 'Ollama（本机）', baseUrl: 'http://localhost:11434/v1', models: [], note: '无需 API Key' },
+  { id: 'custom', name: '自定义', baseUrl: '', models: [] }
 ]
+
+export const PROFILE_KEYS = ['name', 'preferredName', 'identity', 'location', 'bio', 'goals', 'interests'] as const
+export type ProfileKey = (typeof PROFILE_KEYS)[number]
+export type ProfileValues = Partial<Record<ProfileKey, string>>
 
 export type SearchProvider = 'none' | 'tavily' | 'bocha'
 

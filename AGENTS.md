@@ -11,9 +11,9 @@
 
 ## 可用性分支同步要求
 
-`feat/usability-improvements` 创建时基于当时的 `origin/main`，不包含尚未合并的 `refactor/ui-ux-redesign`。
+`refactor/ui-ux-redesign` 已经通过 Pull Request 合并到 `main`，`feat/usability-improvements` 也已同步该合并提交。后续 AI 不得继续把当前可用性分支描述为缺少新版 UI。
 
-当 UI/UX Pull Request 合并到 `main` 后，在可用性分支继续开发前必须：
+当 `main` 后续合并新的 UI/UX 或其他公共改动时，在可用性分支继续开发前必须：
 
 ```bash
 git status -sb
@@ -23,7 +23,7 @@ git merge origin/main
 
 合并前工作区必须干净。同步后应检查主题组件、页面结构和启动器是否已经来自最新 `main`，不要手工复制 UI 分支文件，也不要绕过 `main` 直接把两个功能分支混合。
 
-如果 UI/UX Pull Request 尚未合并，AI 必须明确说明当前可用性分支不包含新版 UI，再决定是否开展不依赖新版 UI 的工作；不得默认两条分支已经同步。
+每次开始工作都应比较当前分支与 `origin/main` 的提交关系；如果出现新的未同步合并，AI 必须明确说明差异，再决定同步或开展不依赖该差异的工作，不得依据旧备注猜测分支状态。
 
 ## 仓库卫生
 

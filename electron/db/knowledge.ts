@@ -9,6 +9,7 @@ export interface KbFolder {
   id: number
   name: string
   description: string
+  system_key: string | null
   created_at: string
 }
 
@@ -22,6 +23,8 @@ export interface KbItem {
   reason: string
   reflection: string
   ai_summary: string
+  source_entry_id: number | null
+  import_key: string | null
   created_at: string
   updated_at: string
 }
@@ -33,6 +36,8 @@ export interface NewKbItem {
   body: string
   filePath?: string
   reason?: string
+  sourceEntryId?: number
+  importKey?: string
 }
 
 export class KnowledgeBase {
@@ -40,20 +45,29 @@ export class KnowledgeBase {
 
   // ---------- folders ----------
   listFolders(): KbFolder[] {
-    const r = this.db.exec('SELECT id, name, description, created_at FROM kb_folders ORDER BY id')
+    const r = this.db.exec('SELECT id, name, description, system_key, created_at FROM kb_folders ORDER BY id')
     if (!r.length) return []
     return r[0].values.map(v => ({
       id: v[0] as number,
       name: String(v[1] ?? ''),
       description: String(v[2] ?? ''),
-      created_at: String(v[3] ?? '')
+      system_key: v[3] == null ? null : String(v[3]),
+      created_at: String(v[4] ?? '')
     }))
   }
 
   addFolder(name: string, description = ''): KbFolder {
     this.db.run('INSERT INTO kb_folders (name, description) VALUES (?, ?)', [name, description])
     const id = this.db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
-    return { id, name, description, created_at: '' }
+    return { id, name, description, system_key: null, created_at: '' }
+  }
+
+  ensureSystemFolder(systemKey: string, defaultName: string): KbFolder {
+    const found = this.listFolders().find(f => f.system_key === systemKey)
+    if (found) return found
+    this.db.run('INSERT INTO kb_folders (name, description, system_key) VALUES (?, ?, ?)', [defaultName, '', systemKey])
+    const id = this.db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
+    return { id, name: defaultName, description: '', system_key: systemKey, created_at: '' }
   }
 
   renameFolder(id: number, name: string, description?: string): void {
@@ -90,9 +104,9 @@ export class KnowledgeBase {
 
   addItem(n: NewKbItem): KbItem {
     this.db.run(
-      `INSERT INTO kb_items (folder_id, title, source_type, body, file_path, reason)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [n.folderId, n.title, n.sourceType, n.body, n.filePath ?? '', n.reason ?? '']
+      `INSERT INTO kb_items (folder_id, title, source_type, body, file_path, reason, source_entry_id, import_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [n.folderId, n.title, n.sourceType, n.body, n.filePath ?? '', n.reason ?? '', n.sourceEntryId ?? null, n.importKey ?? null]
     )
     const id = this.db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
     return this.getItem(id)!

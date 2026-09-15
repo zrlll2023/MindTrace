@@ -30,6 +30,7 @@ export function parseClaudeExport(jsonText: string): ImportedConversation[] {
 
   const out: ImportedConversation[] = []
   for (const conv of data as Array<Record<string, unknown>>) {
+    const externalId = typeof conv.uuid === 'string' ? conv.uuid : undefined
     const title = typeof conv.name === 'string' ? conv.name : '未命名会话'
     const createdAt = typeof conv.created_at === 'string' ? conv.created_at : undefined
     const rawMessages = Array.isArray(conv.chat_messages) ? conv.chat_messages : []
@@ -44,6 +45,7 @@ export function parseClaudeExport(jsonText: string): ImportedConversation[] {
 
     out.push({
       source: 'claude',
+      externalId,
       title,
       date: isoToLocalDate(createdAt),
       messages
