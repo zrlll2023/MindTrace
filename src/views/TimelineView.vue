@@ -1,27 +1,34 @@
 <template>
-  <div class="timeline">
+  <div class="page">
+    <div class="page-head">
+      <h1 class="page-title">时间线</h1>
+      <p class="page-sub">按日回溯你的心迹轨迹</p>
+    </div>
+
     <div class="toolbar">
       <div class="chips">
         <button
-          v-for="(label, k) in KIND_LABELS"
+          v-for="(label, k) in KIND_PLAIN"
           :key="k"
-          class="chip"
-          :class="{ on: kind === k }"
-          @click="toggleKind(k as EntryKind)"
+          class="chip kind"
+          :class="[kindClass(k), { on: kind === k }]"
+          @click="toggleKind(k)"
         >
-          {{ label }}
+          <span class="kind-dot" />{{ label }}
         </button>
       </div>
       <div class="filters">
         <input v-model="dateFrom" type="date" @change="reload" />
-        <span>至</span>
+        <span class="sep">至</span>
         <input v-model="dateTo" type="date" @change="reload" />
-        <input
-          v-model="keyword"
-          class="search"
-          :placeholder="semanticOn ? '混合搜索（关键词+语义，AI 扩展查询）…' : '全文搜索…'"
-          @input="onSearch"
-        />
+        <label class="search-box">
+          <Icon name="search" :size="15" />
+          <input
+            v-model="keyword"
+            :placeholder="semanticOn ? '混合搜索（关键词+语义，AI 扩展查询）…' : '全文搜索…'"
+            @input="onSearch"
+          />
+        </label>
         <label class="checkbox" title="关键词 + 语义双路融合（RRF），并让 AI 扩展查询变体；需在设置页启用 Embedding">
           <input v-model="semanticOn" type="checkbox" @change="onSearch" />混合
         </label>
@@ -29,50 +36,78 @@
     </div>
 
     <div v-if="searching" class="search-note">
-      {{ semanticOn ? '混合搜索' : '搜索' }}「{{ keyword }}」的结果（{{ entries.length }} 条）
+      <span class="tag accent">{{ semanticOn ? '混合搜索' : '搜索' }}</span>
+      「{{ keyword }}」命中 {{ entries.length }} 条
       <span v-if="expandedQueries.length > 1" class="exp">AI 扩展：{{ expandedQueries.slice(1).join(' / ') }}</span>
       <span v-if="semanticNotice" class="warn">{{ semanticNotice }}</span>
     </div>
 
-    <div class="list">
-      <div v-for="group in groups" :key="group.date" class="day-group">
-        <div class="day-head">{{ group.date }}</div>
-        <div
-          v-for="e in group.items"
-          :key="e.id"
-          class="entry"
-          @click="openDetail(e)"
-        >
-          <span class="badge">{{ KIND_LABELS[e.kind as EntryKind] }}</span>
-          <span class="summary">{{ summarize(e) }}</span>
-          <span v-if="semanticOn && e._score != null" class="score">{{ e._rerank != null ? `已精排 ${Math.round(e._rerank * 100)}%` : `${Math.round(e._score * 100)}%` }}</span>
-          <span class="time">{{ e.created_at.slice(11, 16) }}</span>
-          <div v-if="semanticOn && e._chunk" class="chunk-hit">匹配片段：{{ e._chunk }}</div>
+    <!-- 真轴线时间线 -->
+    <div v-if="entries.length" class="tl">
+      <section v-for="group in groups" :key="group.date" class="day">
+        <div class="day-aside">
+          <span class="day-node" />
+          <div class="day-date">{{ formatDay(group.date) }}</div>
+          <div class="day-meta">{{ weekday(group.date) }} · {{ group.items.length }} 条</div>
         </div>
+        <div class="day-main">
+          <article
+            v-for="e in group.items"
+            :key="e.id"
+            class="entry"
+            @click="openDetail(e)"
+          >
+            <span class="t">{{ e.created_at.slice(11, 16) }}</span>
+            <span class="kind-badge" :class="kindClass(e.kind)">
+              <span class="kind-dot" />{{ kindLabel(e.kind) }}
+            </span>
+            <span class="summary">{{ summarize(e) }}</span>
+            <span v-if="semanticOn && e._score != null" class="score">
+              {{ e._rerank != null ? `精排 ${Math.round(e._rerank * 100)}%` : `${Math.round(e._score * 100)}%` }}
+            </span>
+            <div v-if="semanticOn && e._chunk" class="chunk-hit">匹配片段：{{ e._chunk }}</div>
+          </article>
+        </div>
+      </section>
+
+      <div class="tl-foot">
+        <button v-if="hasMore && !searching" class="secondary" @click="loadMore">加载更多</button>
+        <span v-else class="end-note">— 已到最早的记录 —</span>
       </div>
-      <div v-if="!entries.length" class="empty">暂无记录——去「记录」页写下第一条吧。</div>
-      <button v-if="hasMore && !searching" class="more" @click="loadMore">加载更多</button>
     </div>
 
+    <div v-else class="empty">
+      <h3>还没有留下痕迹</h3>
+      <p>去「记录」页写下第一条吧，之后它会按日期出现在这里。</p>
+    </div>
+
+    <!-- 详情侧栏 -->
     <div v-if="detail" class="drawer-mask" @click.self="detail = null">
-      <div class="drawer">
+      <div class="drawer side">
         <div class="drawer-head">
-          <span class="badge">{{ KIND_LABELS[detail.kind as EntryKind] }}</span>
+          <span class="kind-badge" :class="kindClass(detail.kind)">
+            <span class="kind-dot" />{{ kindLabel(detail.kind) }}
+          </span>
           <span class="meta">{{ detail.created_at }} · 置信度 {{ Math.round(detail.confidence * 100) }}%</span>
-          <button class="close" @click="detail = null">✕</button>
+          <button class="close" title="关闭" @click="detail = null">
+            <Icon name="close" :size="16" />
+          </button>
         </div>
-        <div class="raw">
-          <div class="label">原始记录（不可修改）</div>
-          <p>{{ detail.raw_text }}</p>
+
+        <div class="field">
+          <div class="section-label">原始记录（不可修改）</div>
+          <p class="raw">{{ detail.raw_text }}</p>
         </div>
-        <div class="content-edit">
-          <div class="label">结构化内容（可修正）</div>
-          <textarea v-model="detailContentText" rows="6" />
-          <div class="row" style="margin-top: 8px">
-            <button class="primary" @click="saveContent">保存修改</button>
-            <button class="danger" @click="removeEntry">删除这条记录</button>
-            <span v-if="saved" class="saved">已保存 ✓</span>
-          </div>
+
+        <div class="field">
+          <div class="section-label">结构化内容（可修正）</div>
+          <textarea v-model="detailContentText" rows="8" class="mono" />
+        </div>
+
+        <div class="row">
+          <button class="primary" @click="saveContent">保存修改</button>
+          <button class="danger" @click="removeEntry">删除这条记录</button>
+          <span v-if="saved" class="msg ok inline">已保存 ✓</span>
         </div>
       </div>
     </div>
@@ -81,7 +116,9 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
-import { KIND_LABELS, EntryKind, TimelineFilter } from '../../electron/types'
+import { EntryKind, TimelineFilter } from '../../electron/types'
+import Icon from '../components/Icon.vue'
+import { KIND_PLAIN, kindClass, kindLabel } from '../utils/kinds'
 
 interface EntryRow {
   id: number
@@ -102,7 +139,7 @@ const dateFrom = ref('')
 const dateTo = ref('')
 const keyword = ref('')
 const searching = ref(false)
-const semanticOn = ref(true) // 默认开：有 Embedding 用混合，无则自动回退关键词
+const semanticOn = ref(true)
 const semanticNotice = ref('')
 const expandedQueries = ref<string[]>([])
 const PAGE = 50
@@ -111,6 +148,28 @@ const hasMore = ref(false)
 const detail = ref<EntryRow | null>(null)
 const detailContentText = ref('')
 const saved = ref(false)
+
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+/** 2026-09-15 → 09月15日 / 今天 / 昨天 */
+function formatDay(d: string): string {
+  const t = todayStr()
+  if (d === t) return '今天'
+  const y = new Date()
+  y.setDate(y.getDate() - 1)
+  if (d === y.toISOString().slice(0, 10)) return '昨天'
+  const [, m, day] = d.split('-')
+  return `${m}月${Number(day)}日`
+}
+
+function weekday(d: string): string {
+  const dt = new Date(`${d}T00:00:00`)
+  return Number.isNaN(dt.getTime()) ? '' : WEEKDAYS[dt.getDay()]
+}
 
 const groups = computed(() => {
   const map = new Map<string, EntryRow[]>()
@@ -161,8 +220,8 @@ function reload(): void {
   void load()
 }
 
-function toggleKind(k: EntryKind): void {
-  kind.value = kind.value === k ? null : k
+function toggleKind(k: string): void {
+  kind.value = kind.value === k ? null : (k as EntryKind)
   void load()
 }
 
@@ -180,7 +239,6 @@ function onSearch(): void {
     searching.value = true
     expandedQueries.value = []
     if (semanticOn.value) {
-      // 混合搜索：关键词 ⊕ 语义（RRF 融合）+ AI 查询扩展；Embedding 未配置时后端自动退化为纯关键词
       const r = await window.api.hybrid.search(keyword.value.trim(), 30, true)
       if (r.ok) {
         semanticNotice.value = ''
@@ -233,42 +291,99 @@ onMounted(() => void load())
 </script>
 
 <style scoped>
-.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.chip { padding: 5px 12px; border: 1px solid #d0d3d8; background: #fff; border-radius: 999px; font-size: 13px; cursor: pointer; }
-.chip.on { background: #4f7cff; color: #fff; border-color: #4f7cff; }
-.filters { display: flex; gap: 8px; align-items: center; font-size: 13px; }
-.filters input[type=date] { border: 1px solid #d0d3d8; border-radius: 6px; padding: 5px 8px; font-size: 13px; }
-.search { width: 200px; border: 1px solid #d0d3d8; border-radius: 999px; padding: 6px 14px; font-size: 13px; }
-.search-note { font-size: 12px; color: #888; margin-bottom: 8px; }
-.day-head { font-size: 13px; font-weight: 600; color: #555; margin: 16px 0 6px; }
-.entry {
-  display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 10px;
-  padding: 10px 14px; margin-bottom: 6px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.05);
+.toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
 }
-.entry:hover { box-shadow: 0 2px 6px rgba(0,0,0,.1); }
-.badge { font-size: 12px; background: #eef1f5; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
-.summary { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.time { font-size: 12px; color: #999; }
-.score { font-size: 11px; color: #4f7cff; background: #eef2ff; border-radius: 6px; padding: 1px 6px; }
-.checkbox { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #555; cursor: pointer; }
-.warn { color: #b45309; margin-left: 8px; }
-.exp { color: #4f7cff; margin-left: 8px; font-size: 11px; }
-.chunk-hit {
-  width: 100%; font-size: 11px; color: #888; background: #f6f7f9;
-  border-radius: 6px; padding: 4px 8px; margin-top: 4px;
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip.kind.on { background: var(--kc-weak); border-color: var(--kc); color: var(--kc); }
+
+.filters { display: flex; gap: 10px; align-items: center; font-size: 13px; flex-wrap: wrap; }
+.filters .sep { color: var(--text-3); font-size: 12px; }
+.filters input[type='date'] { width: auto; }
+
+.search-note {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--text-2); margin-bottom: 14px;
+}
+.search-note .exp { color: var(--accent-text); font-size: 11.5px; }
+.search-note .warn { color: var(--warn); }
+
+/* ---- 轴线时间线 ---- */
+.tl { position: relative; }
+.tl::before {
+  content: '';
+  position: absolute; left: 76px; top: 10px; bottom: 0;
+  width: 1px; background: var(--border);
+}
+.day { display: flex; gap: 20px; }
+.day-aside {
+  position: relative;
+  width: 76px; flex: 0 0 76px;
+  text-align: right; padding: 10px 16px 0 0;
+}
+.day-node {
+  position: absolute; right: -5px; top: 16px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+}
+.day-date { font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.day-meta { font-size: 11px; color: var(--text-3); }
+
+.day-main { flex: 1; min-width: 0; padding: 8px 0 14px; }
+
+.entry {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center; gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 9px 14px; margin-bottom: 6px;
+  cursor: pointer; box-shadow: var(--shadow);
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.entry:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateX(2px);
+}
+.entry .t { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.entry .summary {
+  font-size: 13.5px; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.empty { text-align: center; color: #999; margin-top: 80px; }
-.more { display: block; margin: 12px auto; padding: 7px 20px; border: 1px solid #d0d3d8; background: #fff; border-radius: 8px; cursor: pointer; }
-.drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; justify-content: flex-end; z-index: 10; }
-.drawer { width: 460px; background: #fff; padding: 20px; overflow-y: auto; }
-.drawer-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.meta { font-size: 12px; color: #888; flex: 1; }
-.close { border: none; background: transparent; font-size: 16px; cursor: pointer; }
-.label { font-size: 12px; color: #888; margin: 10px 0 4px; }
-.raw p { background: #f6f7f9; border-radius: 8px; padding: 10px; font-size: 13px; color: #555; }
-.content-edit textarea { width: 100%; box-sizing: border-box; border: 1px solid #d0d3d8; border-radius: 8px; padding: 10px; font-size: 12px; font-family: monospace; }
-.primary { margin-top: 10px; padding: 7px 18px; border: none; border-radius: 8px; background: #4f7cff; color: #fff; cursor: pointer; }
-.saved { margin-left: 10px; font-size: 13px; color: #0a8f4d; }
+.entry .score {
+  font-size: 11px; color: var(--accent-text);
+  background: var(--accent-weak); border-radius: var(--r-sm); padding: 1px 7px;
+  font-variant-numeric: tabular-nums;
+}
+.entry .chunk-hit {
+  grid-column: 1 / -1;
+  font-size: 11px; color: var(--text-3);
+  background: var(--surface-2); border-radius: var(--r-sm);
+  padding: 4px 9px; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.tl-foot { display: flex; justify-content: center; padding: 12px 0 4px; }
+.end-note { font-size: 11.5px; color: var(--text-3); letter-spacing: 0.08em; }
+
+/* ---- 详情侧栏 ---- */
+.meta { font-size: 11.5px; color: var(--text-3); flex: 1; }
+.raw {
+  background: var(--surface-2); border-radius: var(--r);
+  padding: 10px 12px; font-size: 13px; color: var(--text-2); margin: 0;
+}
+textarea.mono { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
+
+@media (max-width: 760px) {
+  .tl::before { display: none; }
+  .day { flex-direction: column; gap: 4px; }
+  .day-aside { width: auto; flex: none; text-align: left; padding: 12px 0 4px; }
+  .day-node { display: none; }
+  .day-date { display: inline-block; }
+  .day-meta { display: inline-block; margin-left: 8px; }
+}
 </style>

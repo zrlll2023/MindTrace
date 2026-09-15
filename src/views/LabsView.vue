@@ -1,27 +1,42 @@
 <template>
-  <div class="labs">
+  <div class="page labs">
+    <div class="page-head">
+      <h1 class="page-title">实验室</h1>
+      <p class="page-sub">相关性分析与引导式研究</p>
+    </div>
+
     <div class="badge-row">
-      <span class="lab-badge">🧪 实验功能</span>
-      <span class="hint">这些功能仍在打磨，输出仅供参考。</span>
+      <span class="tag warn">实验功能</span>
+      <span class="hint" style="margin: 0">这些功能仍在打磨，输出仅供参考。</span>
     </div>
 
     <div class="card">
       <h3>相关性仪表盘</h3>
-      <p class="hint">你的睡眠时长（蓝线）与负面事件数（红线）逐日对照——线越同步，说明两者越相关。</p>
+      <p class="hint">你的睡眠时长与负面事件数逐日对照——线越同步，说明两者越相关。</p>
       <div class="range">
         <input v-model="dateFrom" type="date" @change="loadMetrics" />
-        <span>至</span>
+        <span class="sep">至</span>
         <input v-model="dateTo" type="date" @change="loadMetrics" />
-        <button class="secondary" @click="last30">最近 30 天</button>
+        <button class="secondary small" @click="last30">最近 30 天</button>
       </div>
+
       <div v-if="metrics.length" class="chart">
         <svg :viewBox="`0 0 ${W} ${H}`" preserveAspectRatio="none">
-          <polyline :points="sleepPoints" fill="none" stroke="#4f7cff" stroke-width="2" />
-          <polyline :points="negPoints" fill="none" stroke="#e05252" stroke-width="2" />
+          <line
+            v-for="i in 4"
+            :key="i"
+            class="grid"
+            :x1="10"
+            :x2="W - 10"
+            :y1="20 + ((i - 1) * (H - 40)) / 3"
+            :y2="20 + ((i - 1) * (H - 40)) / 3"
+          />
+          <polyline class="line sleep" :points="sleepPoints" />
+          <polyline class="line neg" :points="negPoints" />
         </svg>
         <div class="legend">
-          <span class="dot blue"></span>睡眠时长
-          <span class="dot red"></span>负面事件数
+          <span class="key"><span class="dot sleep" />睡眠时长</span>
+          <span class="key"><span class="dot neg" />负面事件数</span>
         </div>
         <div class="x-labels">
           <span>{{ metrics[0]?.date }}</span>
@@ -35,16 +50,19 @@
     <div class="card">
       <h3>引导式周度研究</h3>
       <p class="hint">AI 根据你的兴趣线出搜索词 → 你点链接去搜索 → 把有价值的内容粘贴回来存入时间线。</p>
-      <button :disabled="planning" @click="plan">
+      <button class="primary" :disabled="planning" @click="plan">
+        <Icon name="sparkles" :size="15" />
         {{ planning ? 'AI 思考中…' : '生成本周研究计划' }}
       </button>
       <div v-if="researchNote" class="note">{{ researchNote }}</div>
+
       <div v-for="q in queries" :key="q" class="query-row">
         <span class="q">{{ q }}</span>
-        <a :href="searchUrl(q)" target="_blank" rel="noopener">
-          <button class="secondary">去搜索 ↗</button>
+        <a :href="searchUrl(q)" target="_blank" rel="noopener" class="go">
+          <Icon name="external" :size="14" />去搜索
         </a>
       </div>
+
       <template v-if="queries.length">
         <div class="field">
           <label>粘贴你发现的有价值内容（句子/摘要）</label>
@@ -54,10 +72,10 @@
           <label>出处链接（可选）</label>
           <input v-model="findingFrom" placeholder="https://…" />
         </div>
-        <button :disabled="!finding.trim() || saving" @click="saveFinding">
+        <button class="primary" :disabled="!finding.trim() || saving" @click="saveFinding">
           {{ saving ? '保存中…' : '存入时间线' }}
         </button>
-        <span v-if="savedMsg" class="msg ok">{{ savedMsg }}</span>
+        <span v-if="savedMsg" class="msg ok inline" style="margin-left: 8px">{{ savedMsg }}</span>
       </template>
     </div>
   </div>
@@ -65,6 +83,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
+import Icon from '../components/Icon.vue'
 
 interface DayMetrics {
   date: string
@@ -75,7 +94,7 @@ interface DayMetrics {
 }
 
 const W = 600
-const H = 160
+const H = 180
 
 const dateFrom = ref(thirtyDaysAgo())
 const dateTo = ref(today())
@@ -111,7 +130,7 @@ const sleepPoints = computed(() => {
   if (withSleep.length < 2) return ''
   const max = Math.max(...withSleep.map(m => m.sleep_hours!), 10)
   return withSleep
-    .map((m, i) => {
+    .map(m => {
       const x = (metrics.value.indexOf(m) / (metrics.value.length - 1)) * (W - 20) + 10
       const y = H - 20 - ((m.sleep_hours ?? 0) / max) * (H - 40)
       return `${x},${y}`
@@ -169,29 +188,47 @@ onMounted(() => void loadMetrics())
 
 <style scoped>
 .labs { max-width: 860px; }
-.badge-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.lab-badge { background: #fef3cd; color: #8a6d00; font-size: 12px; padding: 3px 10px; border-radius: 999px; }
-.card { background: #fff; border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-h3 { margin: 0 0 6px; font-size: 15px; }
-.hint { font-size: 12px; color: #888; }
-.range { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 10px 0; }
-.range input { border: 1px solid #d0d3d8; border-radius: 6px; padding: 5px 8px; font-size: 13px; }
-.chart svg { width: 100%; height: 180px; background: #fafbfc; border-radius: 8px; }
-.legend { font-size: 12px; color: #666; margin-top: 6px; display: flex; align-items: center; gap: 6px; }
-.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.dot.blue { background: #4f7cff; }
-.dot.red { background: #e05252; margin-left: 10px; }
-.x-labels { display: flex; justify-content: space-between; font-size: 11px; color: #999; }
-.empty { color: #999; font-size: 13px; padding: 24px 0; text-align: center; }
-button { padding: 8px 18px; border: none; border-radius: 8px; background: #4f7cff; color: #fff; font-size: 13px; cursor: pointer; }
-button.secondary { background: #eef1f5; color: #333; }
-button:disabled { opacity: .5; cursor: not-allowed; }
-.note { font-size: 13px; color: #555; background: #f6f7f9; border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
-.query-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.badge-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.card > h3 { margin-bottom: 4px; }
+
+.range { display: flex; gap: 10px; align-items: center; font-size: 13px; margin: 10px 0 14px; flex-wrap: wrap; }
+.range .sep { color: var(--text-3); font-size: 12px; }
+
+.chart svg {
+  width: 100%; height: 190px;
+  background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.chart .grid { stroke: var(--grid-line); stroke-width: 1; }
+.chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .line.sleep { stroke: var(--k-sleep); }
+.chart .line.neg { stroke: var(--k-event); }
+
+.legend { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--text-2); margin-top: 8px; }
+.key { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot.sleep { background: var(--k-sleep); }
+.dot.neg { background: var(--k-event); }
+.x-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); margin-top: 4px; }
+
+.note {
+  font-size: 13px; color: var(--text-2);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 10px 12px; margin: 12px 0;
+}
+.query-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+}
 .query-row .q { flex: 1; font-size: 14px; }
-.query-row a { text-decoration: none; }
+.go {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12.5px; color: var(--accent);
+  padding: 4px 10px; border-radius: var(--r-full);
+  border: 1px solid var(--border-strong);
+}
+.go:hover { background: var(--accent-weak); text-decoration: none; }
+
 .field { margin-top: 12px; }
-.field label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
-.field input, .field textarea { width: 100%; box-sizing: border-box; border: 1px solid #d0d3d8; border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
-.msg.ok { font-size: 13px; color: #0a8f4d; margin-left: 10px; }
+.field label { display: block; font-size: 12.5px; color: var(--text-2); margin-bottom: 5px; }
 </style>

@@ -1,16 +1,23 @@
 <template>
-  <div class="kb-page">
-    <div class="kb-head">
-      <h2>知识库</h2>
-      <div class="row">
-        <button class="secondary" @click="creatingFolder = true">＋ 新建文件夹</button>
-      </div>
+  <div class="page">
+    <div class="page-head">
+      <h1 class="page-title">知识库</h1>
+      <p class="page-sub">收录资料，写下原因与感受</p>
     </div>
-    <p class="hint">收集资料：markdown / 网页 / Word / PPT / Excel。收录时可写下原因，读完可记录感受；AI 总结与延伸只在你点按钮时进行。</p>
+
+    <div class="kb-toolbar">
+      <p class="hint">
+        支持 Markdown / 网页 / Word / PPT / Excel。收录时可写下原因，读完可记录感受；AI 总结与延伸只在你点按钮时进行。
+      </p>
+      <button class="secondary" @click="creatingFolder = true">
+        <Icon name="plus" :size="15" />新建文件夹
+      </button>
+    </div>
 
     <div class="kb-body">
       <!-- 文件夹列表 -->
-      <aside class="folders">
+      <aside class="folders card">
+        <div class="section-label">文件夹</div>
         <div
           v-for="f in folders"
           :key="f.id"
@@ -18,15 +25,17 @@
           :class="{ on: currentFolder?.id === f.id }"
           @click="selectFolder(f)"
         >
-          <span class="f-icon">📁</span>
+          <Icon name="folder" :size="16" />
           <span class="f-name">{{ f.name }}</span>
-          <button class="ghost small" title="删除文件夹" @click.stop="removeFolder(f)">🗑</button>
+          <button class="ghost icon-btn" title="删除文件夹" @click.stop="removeFolder(f)">
+            <Icon name="trash" :size="14" />
+          </button>
         </div>
-        <div v-if="!folders.length" class="empty" style="padding: 20px 0">还没有文件夹</div>
+        <div v-if="!folders.length" class="arch-empty">还没有文件夹</div>
 
         <div v-if="creatingFolder" class="new-folder">
           <input v-model="newFolderName" placeholder="文件夹名" @keyup.enter="createFolder" />
-          <div class="row" style="margin-top: 6px">
+          <div class="row" style="margin-top: 8px">
             <button class="primary small" @click="createFolder">创建</button>
             <button class="ghost small" @click="creatingFolder = false">取消</button>
           </div>
@@ -39,15 +48,20 @@
           <div class="items-toolbar">
             <h3>{{ currentFolder.name }}</h3>
             <div class="row">
-              <button class="secondary" @click="importFiles">📥 导入文件</button>
-              <button class="secondary" @click="creatingItem = true">✍️ 手动添加</button>
-              <button class="primary" :disabled="extending" @click="extendFolder">
-                {{ extending ? 'AI 延伸中…' : '✨ AI 延伸（按本夹内容）' }}
+              <button class="secondary small" @click="importFiles">
+                <Icon name="inbox" :size="15" />导入文件
+              </button>
+              <button class="secondary small" @click="creatingItem = true">
+                <Icon name="pen" :size="15" />手动添加
+              </button>
+              <button class="primary small" :disabled="extending" @click="extendFolder">
+                <Icon name="sparkles" :size="15" />
+                {{ extending ? 'AI 延伸中…' : 'AI 延伸' }}
               </button>
             </div>
           </div>
 
-          <div v-if="extendResult" class="card ai-card">
+          <div v-if="extendResult" class="card accent">
             <h3>AI 延伸结果</h3>
             <pre class="ai-text">{{ extendResult }}</pre>
             <div class="row">
@@ -56,20 +70,27 @@
             </div>
           </div>
 
-          <div v-for="it in items" :key="it.id" class="item card" @click="openItem(it)">
+          <article v-for="it in items" :key="it.id" class="item card" @click="openItem(it)">
             <div class="item-head">
               <span class="tag">{{ typeLabel(it.source_type) }}</span>
               <strong>{{ it.title }}</strong>
-              <button class="ghost small" title="删除" @click.stop="removeItem(it)">🗑</button>
+              <button class="ghost icon-btn" title="删除" @click.stop="removeItem(it)">
+                <Icon name="trash" :size="14" />
+              </button>
             </div>
-            <p v-if="it.reason" class="reason">📌 收录原因：{{ it.reason }}</p>
-            <p v-if="it.reflection" class="reflection">💭 感受：{{ it.reflection }}</p>
-            <p v-if="it.ai_summary" class="summary">🤖 {{ it.ai_summary.slice(0, 120) }}{{ it.ai_summary.length > 120 ? '…' : '' }}</p>
+            <p v-if="it.reason" class="reason">收录原因：{{ it.reason }}</p>
+            <p v-if="it.reflection" class="reflection">我的感受：{{ it.reflection }}</p>
+            <p v-if="it.ai_summary" class="summary">AI 摘要：{{ it.ai_summary.slice(0, 120) }}{{ it.ai_summary.length > 120 ? '…' : '' }}</p>
+          </article>
+          <div v-if="!items.length" class="empty">
+            <h3>这个文件夹还是空的</h3>
+            <p>导入文件或手动添加一条资料。</p>
           </div>
-          <div v-if="!items.length" class="empty">这个文件夹还是空的</div>
         </template>
-        <div v-else class="empty" style="margin-top: 10vh">
-          <p>选择左侧文件夹，或新建一个开始收集。</p>
+
+        <div v-else class="empty">
+          <h3>选择一个文件夹</h3>
+          <p>或者新建一个，开始收集值得留下的内容。</p>
         </div>
       </section>
     </div>
@@ -77,7 +98,10 @@
     <!-- 手动添加资料 -->
     <div v-if="creatingItem" class="drawer-mask" @click.self="creatingItem = false">
       <div class="drawer">
-        <h3>手动添加资料</h3>
+        <div class="drawer-head">
+          <h3 style="margin: 0">手动添加资料</h3>
+          <button class="close" @click="creatingItem = false"><Icon name="close" :size="16" /></button>
+        </div>
         <div class="field">
           <label>标题</label>
           <input v-model="newItem.title" placeholder="如：纸上得来终觉浅" />
@@ -102,10 +126,10 @@
       <div class="drawer wide">
         <div class="drawer-head">
           <span class="tag">{{ typeLabel(detail.source_type) }}</span>
-          <strong style="font-size: 15px">{{ detail.title }}</strong>
-          <button class="close" @click="detail = null">✕</button>
+          <strong class="detail-title">{{ detail.title }}</strong>
+          <button class="close" @click="detail = null"><Icon name="close" :size="16" /></button>
         </div>
-        <div v-if="detail.file_path" class="hint">{{ detail.file_path }}</div>
+        <div v-if="detail.file_path" class="hint path">{{ detail.file_path }}</div>
 
         <div class="field">
           <label>内容（可编辑）</label>
@@ -118,11 +142,12 @@
         <div class="row" style="margin-bottom: 14px">
           <button class="primary small" @click="saveDetail">保存修改</button>
           <button class="secondary small" :disabled="summarizing" @click="summarize">
-            {{ summarizing ? 'AI 总结中…' : '🤖 AI 一键总结' }}
+            <Icon name="sparkles" :size="15" />
+            {{ summarizing ? 'AI 总结中…' : 'AI 一键总结' }}
           </button>
         </div>
 
-        <div v-if="detail.ai_summary" class="ai-card card">
+        <div v-if="detail.ai_summary" class="card accent">
           <h3>AI 总结</h3>
           <pre class="ai-text">{{ detail.ai_summary }}</pre>
         </div>
@@ -132,7 +157,7 @@
           <textarea v-model="detailReflection" rows="3" placeholder="这份资料让你想到了什么？" />
         </div>
         <button class="primary small" @click="saveReflection">保存感受</button>
-        <span v-if="detailSaved" class="msg ok" style="margin-left: 8px">已保存 ✓</span>
+        <span v-if="detailSaved" class="msg ok inline" style="margin-left: 8px">已保存 ✓</span>
       </div>
     </div>
   </div>
@@ -140,6 +165,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, reactive } from 'vue'
+import Icon from '../components/Icon.vue'
 
 interface KbFolder {
   id: number
@@ -310,7 +336,11 @@ async function saveExtendAsItem(): Promise<void> {
   if (!currentFolder.value || !extendResult.value) return
   await window.api.kb.addItem(
     currentFolder.value.id,
-    { title: `AI 延伸 ${new Date().toLocaleDateString('zh-CN')}`, sourceType: 'markdown', reason: 'AI 延伸结果（用户确认保存）' },
+    {
+      title: `AI 延伸 ${new Date().toLocaleDateString('zh-CN')}`,
+      sourceType: 'markdown',
+      reason: 'AI 延伸结果（用户确认保存）'
+    },
     extendResult.value
   )
   extendResult.value = ''
@@ -332,45 +362,56 @@ onMounted(loadFolders)
 </script>
 
 <style scoped>
-.kb-head { display: flex; justify-content: space-between; align-items: center; }
-.kb-body { display: flex; gap: 16px; margin-top: 12px; align-items: flex-start; }
+.kb-toolbar {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 14px; margin-bottom: 16px;
+}
+.kb-toolbar .hint { max-width: 640px; }
+.kb-body { display: flex; gap: 18px; align-items: flex-start; }
 
-.folders {
-  width: 220px; flex: 0 0 220px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px; box-shadow: var(--shadow);
-}
+.folders { width: 220px; flex: 0 0 220px; padding: 14px; }
 .folder {
-  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px;
-  cursor: pointer; color: var(--text-2);
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: var(--r);
+  cursor: pointer; color: var(--text-2); font-size: 13.5px;
 }
-.folder:hover { background: var(--surface-2); }
-.folder.on { background: var(--accent-weak); color: var(--accent); font-weight: 600; }
+.folder:hover { background: var(--surface-2); color: var(--text); }
+.folder.on { background: var(--accent-weak); color: var(--accent-text); font-weight: 600; }
 .f-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.new-folder { padding: 8px 6px; }
+.folder .icon-btn { opacity: 0; }
+.folder:hover .icon-btn, .folder.on .icon-btn { opacity: 1; }
+.arch-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 10px; }
+.new-folder { padding: 8px 4px 2px; }
 
 .items { flex: 1; min-width: 0; }
-.items-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.items-toolbar {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.items-toolbar h3 { margin: 0; font-size: 15px; }
+
 .item { cursor: pointer; }
-.item:hover { border-color: var(--accent); }
+.item:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
 .item-head { display: flex; align-items: center; gap: 8px; }
-.item-head strong { flex: 1; }
+.item-head strong { flex: 1; font-size: 14px; }
+.item-head .icon-btn { opacity: 0; }
+.item:hover .icon-btn { opacity: 1; }
 .reason { color: var(--warn); font-size: 12.5px; margin: 6px 0 0; }
 .reflection { color: var(--ok); font-size: 12.5px; margin: 4px 0 0; }
 .summary { color: var(--text-3); font-size: 12.5px; margin: 4px 0 0; }
 
-.ai-card { background: var(--accent-weak); border-color: transparent; }
-.ai-text { font-family: inherit; white-space: pre-wrap; margin: 0 0 10px; font-size: 13.5px; }
+.ai-text {
+  font-family: var(--font-sans); white-space: pre-wrap; word-break: break-word;
+  margin: 0 0 10px; font-size: 13.5px; line-height: 1.7;
+}
+.detail-title { font-size: 15px; flex: 1; }
+.path {
+  font-family: var(--font-mono); font-size: 11.5px;
+  word-break: break-all; margin-bottom: 14px;
+}
 
-.drawer-mask {
-  position: fixed; inset: 0; background: rgba(15, 23, 42, .35);
-  display: flex; align-items: center; justify-content: center; z-index: 50;
+@media (max-width: 820px) {
+  .kb-body { flex-direction: column; }
+  .folders { width: 100%; flex: none; }
 }
-.drawer {
-  width: 560px; max-width: 92vw; max-height: 86vh; overflow-y: auto;
-  background: var(--surface); border-radius: 12px; padding: 20px 22px; box-shadow: 0 8px 30px rgba(0,0,0,.18);
-}
-.drawer.wide { width: 720px; }
-.drawer-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-.drawer-head .close { margin-left: auto; border: none; background: none; font-size: 16px; color: var(--text-3); cursor: pointer; }
 </style>
