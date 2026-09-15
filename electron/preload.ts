@@ -22,6 +22,13 @@ const api = {
     get: (id: number) => ipcRenderer.invoke('timeline:get', id),
     updateContent: (id: number, content: unknown) =>
       ipcRenderer.invoke('timeline:updateContent', id, content)
+  },
+  reports: {
+    get: (type: 'daily' | 'weekly', period: string) =>
+      ipcRenderer.invoke('reports:get', type, period),
+    list: (type?: 'daily' | 'weekly') => ipcRenderer.invoke('reports:list', type),
+    generate: (date: string) => ipcRenderer.invoke('reports:generate', date),
+    generateWeekly: (endDate: string) => ipcRenderer.invoke('reports:generateWeekly', endDate)
   }
 }
 

@@ -84,6 +84,34 @@ export class LLMAdapter {
     return content
   }
 
+  /** 返回完整消息（含 tool_calls），供需要工具循环的调用方使用 */
+  async chatFull(
+    messages: ChatMessage[],
+    opts: { tools?: ToolSpec[]; json?: boolean } = {}
+  ): Promise<{ content: string | null; tool_calls?: ToolCall[] }> {
+    const body: Record<string, unknown> = { model: this.cfg.model, messages }
+    if (opts.json) body.response_format = { type: 'json_object' }
+    if (opts.tools?.length) {
+      body.tools = opts.tools
+      body.tool_choice = 'auto'
+    }
+    const res = await fetch(`${this.base()}/chat/completions`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(body)
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`LLM 请求失败 HTTP ${res.status}: ${text.slice(0, 300)}`)
+    }
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string | null; tool_calls?: ToolCall[] } }[]
+    }
+    const msg = data.choices?.[0]?.message
+    if (!msg) throw new Error('LLM 返回缺少 message')
+    return { content: msg.content ?? null, tool_calls: msg.tool_calls }
+  }
+
   /** 带工具循环的对话：由调用方提供工具执行器，最多 maxRounds 轮 */
   async chatWithTools(
     messages: ChatMessage[],

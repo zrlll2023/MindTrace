@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import { initContext } from './context'
 import { registerIpcHandlers } from './ipc/handlers'
+import { Scheduler } from './scheduler'
 
 async function createWindow() {
   const win = new BrowserWindow({
@@ -22,9 +23,11 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  await initContext()
+  const ctx = await initContext()
   registerIpcHandlers()
   await createWindow()
+  // 当日首开自动生成日报（spec §11.1）——后台执行，不阻塞窗口
+  void new Scheduler(ctx.repo).ensureReportForToday(ctx.getLlm())
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

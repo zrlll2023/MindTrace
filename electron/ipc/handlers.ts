@@ -107,4 +107,42 @@ export function registerIpcHandlers(): void {
     c.repo.save()
     return { ok: true }
   })
+
+  // ---------- reports ----------
+  ipcMain.handle('reports:get', (_e, type: 'daily' | 'weekly', period: string) =>
+    getContext().repo.getReport(type, period)
+  )
+  ipcMain.handle('reports:list', (_e, type?: 'daily' | 'weekly') =>
+    getContext().repo.listReports(type)
+  )
+  ipcMain.handle('reports:generate', async (_e, date: string) => {
+    const c = getContext()
+    const llm = c.getLlm()
+    if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
+    const { AnalyzeEngine } = await import('../analysis/engine.js')
+    const engine = new AnalyzeEngine(c.repo, llm)
+    try {
+      const report = await engine.analyzeDay(date)
+      c.repo.save()
+      if (!report) return { ok: false, error: `${date} 没有任何记录，无法生成日报` }
+      return { ok: true, reportId: report.id }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+  ipcMain.handle('reports:generateWeekly', async (_e, endDate: string) => {
+    const c = getContext()
+    const llm = c.getLlm()
+    if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
+    const { AnalyzeEngine } = await import('../analysis/engine.js')
+    const engine = new AnalyzeEngine(c.repo, llm)
+    try {
+      const report = await engine.analyzeWeek(endDate)
+      c.repo.save()
+      if (!report) return { ok: false, error: '该周没有任何记录' }
+      return { ok: true, reportId: report.id }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
 }
