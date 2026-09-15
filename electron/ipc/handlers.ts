@@ -145,4 +145,22 @@ export function registerIpcHandlers(): void {
       return { ok: false, error: (e as Error).message }
     }
   })
+
+  // ---------- export / backup ----------
+  ipcMain.handle('export:md', (_e, report: { type: 'daily' | 'weekly'; period: string; content_md: string; meta: string }) =>
+    getContext().repo
+      ? (async () => {
+          const c = getContext()
+          const { exportMarkdown } = await import('../export/markdown.js')
+          return exportMarkdown(report, c.dataDir)
+        })()
+      : Promise.resolve({ path: '' })
+  )
+  ipcMain.handle('backup:run', async () => {
+    const c = getContext()
+    c.repo.save() // 先落盘再备份，保证备份是最新状态
+    const { runBackup } = await import('../store/backup.js')
+    const s = c.getSettings()
+    return runBackup(c.dataDir, s.backupRetention ?? 30)
+  })
 }

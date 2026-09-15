@@ -29,6 +29,13 @@ const api = {
     list: (type?: 'daily' | 'weekly') => ipcRenderer.invoke('reports:list', type),
     generate: (date: string) => ipcRenderer.invoke('reports:generate', date),
     generateWeekly: (endDate: string) => ipcRenderer.invoke('reports:generateWeekly', endDate)
+  },
+  export: {
+    md: (report: { type: 'daily' | 'weekly'; period: string; content_md: string; meta: string }) =>
+      ipcRenderer.invoke('export:md', report)
+  },
+  backup: {
+    run: () => ipcRenderer.invoke('backup:run')
   }
 }
 

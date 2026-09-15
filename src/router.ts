@@ -24,8 +24,7 @@ export const routes: NavRoute[] = [
   {
     path: '/reports',
     name: 'reports',
-    component: () => import('./views/PlaceholderView.vue'),
-    props: { title: '报告' },
+    component: () => import('./views/ReportsView.vue'),
     meta: { nav: true, icon: '📊', label: '报告' }
   },
   {
