@@ -241,7 +241,8 @@ export function registerIpcHandlers(): void {
           created_at: h.entry.created_at,
           content: h.entry.content,
           raw_text: h.entry.raw_text,
-          score: Number(h.score.toFixed(4))
+          score: Number(h.score.toFixed(4)),
+          chunk_text: h.chunk_text
         }))
       }
     } catch (e) {
@@ -295,7 +296,8 @@ export function registerIpcHandlers(): void {
             content: h.entry.content,
             raw_text: h.entry.raw_text,
             score: h.score,
-            fused_via: h.fused_via
+            fused_via: h.fused_via,
+            chunk_text: h.chunk_text
           }))
         }
       } catch (e) {

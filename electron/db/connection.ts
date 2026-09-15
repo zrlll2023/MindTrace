@@ -140,12 +140,21 @@ function migrate(db: Database): void {
     db.exec('CREATE INDEX IF NOT EXISTS idx_entries_dedup ON entries(dedup_key)')
   }
 
-  // 增量迁移：语义搜索向量表（v2.5，幂等）
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS vectors (
-      entry_id INTEGER PRIMARY KEY,
-      content_hash TEXT NOT NULL,
-      embedding TEXT NOT NULL
-    );
-  `)
+  // 增量迁移：分块向量表（复合主键，Chunking 升级，幂等）
+  const vcols = db.exec('PRAGMA table_info(vectors)')
+  const hasChunkKey = vcols.length && vcols[0].values.some(v => v[1] === 'chunk_index')
+  if (!hasChunkKey) {
+    // 旧单向量表（若有）重建为分块结构
+    db.exec('DROP TABLE IF EXISTS vectors')
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS vectors (
+        entry_id INTEGER NOT NULL,
+        chunk_index INTEGER NOT NULL DEFAULT 0,
+        chunk_text TEXT NOT NULL DEFAULT '',
+        content_hash TEXT NOT NULL DEFAULT '',
+        embedding TEXT NOT NULL,
+        PRIMARY KEY (entry_id, chunk_index)
+      );
+    `)
+  }
 }

@@ -6,6 +6,8 @@ import { Entry } from '../db/repository'
 export interface SemanticHit {
   entry: Entry
   score: number
+  chunk_text: string
+  chunk_index: number
 }
 
 /**
@@ -34,12 +36,14 @@ export class SemanticSearch {
     if (!this.emb || !query.trim()) return []
     const qv = await this.emb.embedOne(query.slice(0, 500))
     if (!qv.length) return []
-    const hits = await this.vectors.search(qv, topK, minScore)
-    if (!hits.length) return []
+    const raw = await this.vectors.search(qv, topK * 3, minScore) // 多取：同条目多块去重后仍够 topK
+    if (!raw.length) return []
+    const { dedupByEntry } = await import('../db/vectors.js')
+    const hits = dedupByEntry(raw).slice(0, topK)
     const entries = await this.repo.getEntriesByIds(hits.map(h => h.entry_id))
     const byId = new Map(entries.map(e => [e.id, e]))
     return hits
       .filter(h => byId.has(h.entry_id))
-      .map(h => ({ entry: byId.get(h.entry_id)!, score: h.score }))
+      .map(h => ({ entry: byId.get(h.entry_id)!, score: h.score, chunk_text: h.chunk_text, chunk_index: h.chunk_index }))
   }
 }

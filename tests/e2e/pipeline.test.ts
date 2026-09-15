@@ -215,4 +215,50 @@ describe('全链路（Mock LLM 替代真实 Key）', () => {
     expect(d14.entry_count).toBeGreaterThanOrEqual(2) // 导入的对话条目
     expect(d14.idea_count).toBeGreaterThanOrEqual(0)
   })
+
+  it('12. Chunking：长对话拆成多块分别向量化，查询命中具体片段', async () => {
+    const { chunkText } = await import('../../electron/analysis/chunker')
+    const { VectorStore } = await import('../../electron/db/vectors')
+    const { SemanticSearch } = await import('../../electron/analysis/semantic')
+
+    // 长条目：两个主题相距很远的句子
+    const longEntry = await repo.insertEntry({
+      raw_text: 'r',
+      kind: 'conversation',
+      content: JSON.stringify({
+        text: '今天深入讨论了RAG评估的各种指标和方法，包括faithfulness和relevance。'.repeat(15) + '然后我们聊了完全无关的话题比如今晚吃什么。'.repeat(15)
+      }),
+      confidence: 1,
+      source: 'import:chatgpt',
+      entry_date: '2026-09-15'
+    })
+
+    // 分块器本身
+    const text = JSON.parse((await repo.getEntry(longEntry.id))!.content).text as string
+    const parts = chunkText(text, 200, 40)
+    expect(parts.length).toBeGreaterThanOrEqual(3)
+
+    // 嵌入：块向量按内容映射（含 RAG → RAG 方向）
+    const vs = new VectorStore(repo.getDb())
+    const fakeEmb = new (class {
+      async embed(texts: string[]) {
+        return texts.map(t => (t.includes('RAG') || t.includes('评估') ? [1, 0, 0] : [0, 0, 1]))
+      }
+      async embedOne(t: string) {
+        return (await this.embed([t]))[0]
+      }
+    })() as unknown as import('../../electron/adapters/embedding').EmbeddingAdapter
+
+    const n = await vs.embedEntryChunks(repo, fakeEmb)
+    expect(n).toBeGreaterThanOrEqual(3) // 长条目多块
+
+    // 语义搜索 RAG：命中长条目且 chunk_text 是 RAG 片段而非吃的片段
+    const sem = new SemanticSearch(repo, vs, fakeEmb)
+    const hits = await sem.search('RAG 评估方法', 5, 0.5)
+    expect(hits.length).toBeGreaterThanOrEqual(1)
+    const hit = hits.find(h => h.entry.id === longEntry.id)
+    expect(hit).toBeTruthy()
+    expect(hit!.chunk_text).toContain('RAG')
+    expect(hit!.chunk_text).not.toContain('今晚吃什么')
+  })
 })

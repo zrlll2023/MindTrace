@@ -14,6 +14,7 @@ export interface KeywordHit {
   entry: Entry
   score: number
   fused_via: ('keyword' | 'semantic')[]
+  chunk_text?: string
 }
 
 export interface FusedHit {
@@ -95,6 +96,7 @@ export class HybridSearch {
     const kwOnly = new Set(kwLists.flat().map(h => h.id))
     const semOnly = new Set(semHits.map(h => h.entry.id))
 
+    const chunkByTextId = new Map(semHits.map(h => [h.entry.id, h.chunk_text]))
     return fused
       .filter(f => byId.has(f.id))
       .map(f => ({
@@ -103,7 +105,8 @@ export class HybridSearch {
         fused_via: [
           ...(kwOnly.has(f.id) ? (['keyword'] as const) : []),
           ...(semOnly.has(f.id) ? (['semantic'] as const) : [])
-        ]
+        ],
+        chunk_text: chunkByTextId.get(f.id)
       }))
   }
 

@@ -47,6 +47,7 @@
           <span class="summary">{{ summarize(e) }}</span>
           <span v-if="semanticOn && e._score != null" class="score">{{ Math.round(e._score * 100) }}%</span>
           <span class="time">{{ e.created_at.slice(11, 16) }}</span>
+          <div v-if="semanticOn && e._chunk" class="chunk-hit">匹配片段：{{ e._chunk }}</div>
         </div>
       </div>
       <div v-if="!entries.length" class="empty">暂无记录——去「记录」页写下第一条吧。</div>
@@ -88,6 +89,7 @@ interface EntryRow {
   created_at: string
   entry_date: string
   _score?: number
+  _chunk?: string
 }
 
 const entries = ref<EntryRow[]>([])
@@ -179,7 +181,11 @@ function onSearch(): void {
       if (r.ok) {
         semanticNotice.value = ''
         expandedQueries.value = r.queries
-        entries.value = r.hits.map((h: { score: number } & Record<string, unknown>) => ({ ...h, _score: h.score })) as never
+        entries.value = r.hits.map((h: { score: number; chunk_text?: string } & Record<string, unknown>) => ({
+          ...h,
+          _score: h.score,
+          _chunk: h.chunk_text
+        })) as never
       } else {
         semanticNotice.value = `搜索失败：${r.error}`
         entries.value = await window.api.timeline.search(keyword.value.trim())
@@ -235,6 +241,11 @@ onMounted(() => void load())
 .checkbox { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #555; cursor: pointer; }
 .warn { color: #b45309; margin-left: 8px; }
 .exp { color: #4f7cff; margin-left: 8px; font-size: 11px; }
+.chunk-hit {
+  width: 100%; font-size: 11px; color: #888; background: #f6f7f9;
+  border-radius: 6px; padding: 4px 8px; margin-top: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .empty { text-align: center; color: #999; margin-top: 80px; }
 .more { display: block; margin: 12px auto; padding: 7px 20px; border: 1px solid #d0d3d8; background: #fff; border-radius: 8px; cursor: pointer; }
 .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; justify-content: flex-end; z-index: 10; }
