@@ -60,11 +60,16 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('settings:getPresets', () => PROVIDER_PRESETS)
 
   // ---------- llm ----------
-  ipcMain.handle('llm:listModels', async () => {
+  ipcMain.handle('llm:listModels', async (_e, baseUrl?: string, apiKey?: string) => {
     const c = getContext()
-    const llm = c.getLlm()
-    if (!llm) return { ok: false, error: '请先填写 Base URL 和模型名', models: [] }
+    // 优先用表单草稿（用户可能还没保存），Key 缺省用已存的
+    const key = apiKey || c.secrets.get('llm_api_key') || ''
+    const url = (baseUrl || c.getSettings().baseUrl || '').trim()
+    if (!url) return { ok: false, error: '请先填写 Base URL', models: [] }
+    if (!key) return { ok: false, error: '请先填写 API Key 再拉取模型列表', models: [] }
     try {
+      const { LLMAdapter } = await import('../adapters/llm.js')
+      const llm = new LLMAdapter({ baseUrl: url, apiKey: key, model: 'probe' })
       return { ok: true, models: await llm.listModels() }
     } catch (e) {
       return { ok: false, error: (e as Error).message, models: [] }

@@ -9,7 +9,8 @@ const api = {
     getPresets: () => ipcRenderer.invoke('settings:getPresets')
   },
   llm: {
-    listModels: () => ipcRenderer.invoke('llm:listModels'),
+    listModels: (baseUrl?: string, apiKey?: string) =>
+      ipcRenderer.invoke('llm:listModels', baseUrl, apiKey),
     testConnection: (baseUrl: string, apiKey?: string, model?: string) =>
       ipcRenderer.invoke('llm:testConnection', baseUrl, apiKey, model)
   },

@@ -145,13 +145,18 @@ function onPresetChange(): void {
 }
 
 async function onFetchModels(): Promise<void> {
-  // 先保存 baseUrl/model 草稿以便主进程用新配置拉取
-  saving.value = true
-  await window.api.settings.save({ ...form })
-  saving.value = false
+  // 直接用表单草稿（含未保存的 Key）拉取，不再落库
+  if (!form.baseUrl.trim()) {
+    store.show('请先填写 Base URL', false)
+    return
+  }
+  if (!apiKey.value.trim() && !store.payload.hasApiKey) {
+    store.show('请先填写 API Key 再拉取模型列表', false)
+    return
+  }
   fetchingModels.value = true
   try {
-    models.value = await store.fetchModels(form.baseUrl)
+    models.value = await store.fetchModels(form.baseUrl, apiKey.value || undefined)
   } finally {
     fetchingModels.value = false
   }

@@ -48,7 +48,9 @@ export class LLMAdapter {
   constructor(private cfg: LLMConfig) {}
 
   private base(): string {
-    return normalizeBaseUrl(this.cfg.baseUrl)
+    // 用户常漏掉 /v1 后缀；DeepSeek 两种都通，其余 OpenAI 兼容商大多需要 /v1
+    const b = normalizeBaseUrl(this.cfg.baseUrl)
+    return /\/v\d+$/.test(b) || /\/api/.test(b) ? b : `${b}/v1`
   }
 
   private headers(): Record<string, string> {

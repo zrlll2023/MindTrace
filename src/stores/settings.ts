@@ -46,8 +46,8 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function fetchModels(baseUrl: string): Promise<string[]> {
-    const r = await window.api.llm.listModels()
+  async function fetchModels(baseUrl: string, apiKey?: string): Promise<string[]> {
+    const r = await window.api.llm.listModels(baseUrl, apiKey)
     if (!r.ok) {
       show(`拉取模型列表失败：${r.error}`, false)
       return []
