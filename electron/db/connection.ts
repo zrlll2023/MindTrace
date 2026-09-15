@@ -11,7 +11,10 @@ let SQL: SqlJsStatic | null = null
  */
 function locateWasmPath(): string {
   const candidates = [
-    // 打包后：资源目录
+    // 打包后：extraResources（process.resourcesPath）
+    (process as unknown as { resourcesPath?: string }).resourcesPath &&
+      path.join((process as unknown as { resourcesPath: string }).resourcesPath, 'sql-wasm.wasm'),
+    // 显式指定（测试用）
     process.env.MINDTRACE_WASM_DIR && path.join(process.env.MINDTRACE_WASM_DIR, 'sql-wasm.wasm'),
     // 开发环境：node_modules
     path.join(process.cwd(), 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
