@@ -1,6 +1,7 @@
 import { Repo } from '../db/repository'
 import { LLMAdapter, ChatMessage, ToolSpec, ToolCall } from '../adapters/llm'
 import { AnalysisTools } from './tools'
+import { desensitizeText } from './desensitize'
 import { Report } from '../db/repository'
 
 const MAX_TOOL_CALLS = 6
@@ -101,9 +102,14 @@ export class AnalyzeEngine {
 
   constructor(
     private repo: Repo,
-    private llm: LLMAdapter
+    private llm: LLMAdapter,
+    private opts: { desensitize?: boolean } = {}
   ) {
     this.tools = new AnalysisTools(repo)
+  }
+
+  private mask(text: string): string {
+    return this.opts.desensitize ? desensitizeText(text) : text
   }
 
   /** 生成某日日报。当日无 entries 返回 null。 */
@@ -119,7 +125,7 @@ export class AnalyzeEngine {
       id: e.id,
       kind: e.kind,
       created_at: e.created_at,
-      content: JSON.parse(e.content)
+      content: this.maskJson(JSON.parse(e.content))
     }))
 
     const messages: ChatMessage[] = [
@@ -291,6 +297,16 @@ export class AnalyzeEngine {
       default:
         return JSON.stringify({ error: `unknown tool: ${tc.function.name}` })
     }
+  }
+
+  /** 按需脱敏 content 中的字符串值（文本字段掩码，数值保留） */
+  private maskJson(obj: Record<string, unknown>): Record<string, unknown> {
+    if (!this.opts.desensitize) return obj
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(obj)) {
+      out[k] = typeof v === 'string' ? desensitizeText(v) : v
+    }
+    return out
   }
 
   private collectQuotedIds(

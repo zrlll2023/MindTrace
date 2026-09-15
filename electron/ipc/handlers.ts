@@ -2,6 +2,7 @@ import { ipcMain, shell } from 'electron'
 import { getContext } from '../context'
 import { AppSettings, PROVIDER_PRESETS } from '../types'
 import { parseDumpWith } from '../analysis/parser'
+import { desensitizeText } from '../analysis/desensitize'
 import { NewEntry } from '../db/repository'
 import { TimelineFilter } from '../types'
 
@@ -62,7 +63,9 @@ export function registerIpcHandlers(): void {
     const llm = c.getLlm()
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商', parsed: [] }
     try {
-      const parsed = await parseDumpWith(llm, raw)
+      // 出网脱敏（spec §8）：掩码后的文本仅用于解析；本地存的 raw_text 始终是原文
+      const outgoing = c.getSettings().desensitize ? desensitizeText(raw) : raw
+      const parsed = await parseDumpWith(llm, outgoing)
       return { ok: true, parsed }
     } catch (e) {
       return { ok: false, error: (e as Error).message, parsed: [] }
@@ -120,7 +123,9 @@ export function registerIpcHandlers(): void {
     const llm = c.getLlm()
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
     const { AnalyzeEngine } = await import('../analysis/engine.js')
-    const engine = new AnalyzeEngine(c.repo, llm)
+    const engine = new AnalyzeEngine(c.repo, llm, {
+      desensitize: c.getSettings().desensitize
+    })
     try {
       const report = await engine.analyzeDay(date)
       c.repo.save()
@@ -135,7 +140,9 @@ export function registerIpcHandlers(): void {
     const llm = c.getLlm()
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
     const { AnalyzeEngine } = await import('../analysis/engine.js')
-    const engine = new AnalyzeEngine(c.repo, llm)
+    const engine = new AnalyzeEngine(c.repo, llm, {
+      desensitize: c.getSettings().desensitize
+    })
     try {
       const report = await engine.analyzeWeek(endDate)
       c.repo.save()

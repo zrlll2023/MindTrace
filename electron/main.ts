@@ -30,7 +30,9 @@ app.whenReady().then(async () => {
   // 当日首开自动生成日报（spec §11.1）+ 每日备份——后台执行，不阻塞窗口
   void (async () => {
     await runBackup(ctx.dataDir, ctx.getSettings().backupRetention)
-    await new Scheduler(ctx.repo).ensureReportForToday(ctx.getLlm())
+    await new Scheduler(ctx.repo).ensureReportForToday(ctx.getLlm(), {
+      desensitize: ctx.getSettings().desensitize
+    })
   })()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
