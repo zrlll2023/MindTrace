@@ -148,6 +148,34 @@ export function registerIpcHandlers(): void {
     c.repo.save()
     return { ok: true }
   })
+  ipcMain.handle('timeline:delete', (_e, id: number) => {
+    getContext().repo.deleteEntry(id)
+    return { ok: true }
+  })
+  // 手动直录（不经 AI）：与 capture:commit 同一契约闸门入库，source=manual
+  ipcMain.handle('entries:manual', async (_e, kind: string, content: object, rawText: string, entryDate?: string) => {
+    const c = getContext()
+    try {
+      const { validateParsedEntry, KIND_VALUES } = require('../analysis/validators.js') as typeof import('../analysis/validators')
+      if (!KIND_VALUES.includes(kind as never)) {
+        return { ok: false, error: `不支持的记录类型：${kind}` }
+      }
+      const v = validateParsedEntry({ kind, content, confidence: 1 })
+      if (!v.ok || !v.entry) return { ok: false, error: v.reason ?? '内容校验未通过' }
+      const entry = await c.repo.insertEntry({
+        raw_text: rawText || JSON.stringify(content),
+        kind: v.entry.kind,
+        content: JSON.stringify(v.entry.content),
+        confidence: 1,
+        source: 'manual',
+        ...(entryDate ? { entry_date: entryDate } : {})
+      })
+      c.repo.save()
+      return { ok: true, id: entry.id }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
 
   // ---------- reports ----------
   ipcMain.handle('reports:get', (_e, type: 'daily' | 'weekly', period: string) =>

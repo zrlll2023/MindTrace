@@ -68,8 +68,11 @@
         <div class="content-edit">
           <div class="label">结构化内容（可修正）</div>
           <textarea v-model="detailContentText" rows="6" />
-          <button class="primary" @click="saveContent">保存修改</button>
-          <span v-if="saved" class="saved">已保存 ✓</span>
+          <div class="row" style="margin-top: 8px">
+            <button class="primary" @click="saveContent">保存修改</button>
+            <button class="danger" @click="removeEntry">删除这条记录</button>
+            <span v-if="saved" class="saved">已保存 ✓</span>
+          </div>
         </div>
       </div>
     </div>
@@ -216,6 +219,14 @@ async function saveContent(): Promise<void> {
   } catch {
     alert('JSON 格式有误，请检查后再保存')
   }
+}
+
+async function removeEntry(): Promise<void> {
+  if (!detail.value) return
+  if (!confirm('确定删除这条记录吗？此操作不可恢复。')) return
+  await window.api.entries.remove(detail.value.id)
+  detail.value = null
+  await load()
 }
 
 onMounted(() => void load())

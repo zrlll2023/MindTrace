@@ -18,6 +18,11 @@ const api = {
     parse: (raw: string) => ipcRenderer.invoke('capture:parse', raw),
     commit: (raw: string, entries: unknown[]) => ipcRenderer.invoke('capture:commit', raw, entries)
   },
+  entries: {
+    manual: (kind: string, content: object, rawText: string, entryDate?: string) =>
+      ipcRenderer.invoke('entries:manual', kind, content, rawText, entryDate),
+    remove: (id: number) => ipcRenderer.invoke('timeline:delete', id)
+  },
   timeline: {
     list: (filter: unknown) => ipcRenderer.invoke('timeline:list', filter),
     search: (keyword: string) => ipcRenderer.invoke('timeline:search', keyword),

@@ -220,6 +220,17 @@ export class Repo {
     this.save()
   }
 
+  /** 删除条目（用户手动操作的完整权利）；同步清理其向量 */
+  async deleteEntry(id: number): Promise<void> {
+    this.db.run('DELETE FROM entries WHERE id = ?', [id])
+    try {
+      this.db.run('DELETE FROM vectors WHERE entry_id = ?', [id])
+    } catch {
+      // vectors 表不存在（旧库未迁移）时忽略
+    }
+    this.save()
+  }
+
   // ---------- reports ----------
 
   async insertReport(r: NewReport): Promise<Report> {
