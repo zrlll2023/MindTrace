@@ -28,6 +28,12 @@ export const routes: NavRoute[] = [
     meta: { nav: true, icon: '📊', label: '报告' }
   },
   {
+    path: '/knowledge',
+    name: 'knowledge',
+    component: () => import('./views/KnowledgeView.vue'),
+    meta: { nav: true, icon: '📚', label: '知识库' }
+  },
+  {
     path: '/labs',
     name: 'labs',
     component: () => import('./views/LabsView.vue'),

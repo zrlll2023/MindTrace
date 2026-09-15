@@ -157,4 +157,25 @@ function migrate(db: Database): void {
       );
     `)
   }
+
+  // ---------- 知识库（v3）----------
+  db.run(`CREATE TABLE IF NOT EXISTS kb_folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+  )`)
+  db.run(`CREATE TABLE IF NOT EXISTS kb_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    folder_id INTEGER NOT NULL REFERENCES kb_folders(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    source_type TEXT NOT NULL DEFAULT 'markdown',
+    body TEXT DEFAULT '',
+    file_path TEXT DEFAULT '',
+    reason TEXT DEFAULT '',
+    reflection TEXT DEFAULT '',
+    ai_summary TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+  )`)
 }

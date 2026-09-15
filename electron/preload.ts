@@ -56,6 +56,24 @@ const api = {
     search: (query: string, topK?: number, expand?: boolean) =>
       ipcRenderer.invoke('hybrid:search', query, topK, expand)
   },
+  kb: {
+    listFolders: () => ipcRenderer.invoke('kb:listFolders'),
+    addFolder: (name: string, description?: string) => ipcRenderer.invoke('kb:addFolder', name, description),
+    renameFolder: (id: number, name: string, description?: string) =>
+      ipcRenderer.invoke('kb:renameFolder', id, name, description),
+    deleteFolder: (id: number) => ipcRenderer.invoke('kb:deleteFolder', id),
+    listItems: (folderId: number) => ipcRenderer.invoke('kb:listItems', folderId),
+    getItem: (id: number) => ipcRenderer.invoke('kb:getItem', id),
+    addItem: (folderId: number, meta: { title: string; sourceType: string; reason?: string }, body: string, filePath?: string) =>
+      ipcRenderer.invoke('kb:addItem', folderId, meta, body, filePath),
+    updateItem: (id: number, patch: { title?: string; body?: string; reason?: string }) =>
+      ipcRenderer.invoke('kb:updateItem', id, patch),
+    updateReflection: (id: number, text: string) => ipcRenderer.invoke('kb:updateReflection', id, text),
+    deleteItem: (id: number) => ipcRenderer.invoke('kb:deleteItem', id),
+    summarize: (itemId: number) => ipcRenderer.invoke('kb:summarize', itemId),
+    extend: (folderId: number) => ipcRenderer.invoke('kb:extend', folderId),
+    importFiles: (folderId: number, reason?: string) => ipcRenderer.invoke('kb:importFiles', folderId, reason)
+  },
   labs: {
     metrics: (dateFrom: string, dateTo: string) => ipcRenderer.invoke('labs:metrics', dateFrom, dateTo),
     planResearch: () => ipcRenderer.invoke('labs:planResearch'),

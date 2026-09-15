@@ -14,10 +14,14 @@ AI 生成内容只能通过以下 **4 个受控入口**进入软件，每个入�
 |---|---|---|---|
 | 聊天捕获解析 | `capture:commit` | `validateParsedEntry` | 六种 kind |
 | 对话导入 | `import/service.ts` | 固定 `kind='conversation'` | conversation |
+| 手动直录 | `entries:manual` | `validateParsedEntry`（confidence=1） | 六种 kind |
 | 报告生成 | `reports:generate*` | `validateReportPayload` | —（写 reports 表） |
 | 实验功能（v3+） | `labs:*` | `validateLabsPayload` | — |
+| 知识库 AI（v3+） | `kb:summarize` / `kb:extend` | 输出经 `sanitizeText`，仅写 `ai_summary` 等辅助字段 | —（绝不写 entries） |
 
 **任何其他写入路径一律禁止。** 新功能需要新入口时，必须先在本文件登记并补配套校验器。
+
+> **权限原则（v3 修订）**：AI 是按钮背后的工具，不是录入的唯一入口。用户手动录入/修改/删除（手动直录、时间线编辑与删除、知识库增删改）一律**不经过 AI、不消耗 token**；AI 产出只能写入上表登记的入口，且知识库的 `reflection`（感受）字段为用户专属，AI 永不代写。
 
 ## 2. 条目 Schema（entries 表的 AI 产出部分）
 

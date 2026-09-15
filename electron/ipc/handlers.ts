@@ -346,6 +346,173 @@ export function registerIpcHandlers(): void {
     }
   )
 
+  // ---------- 知识库（v3） ----------
+  ipcMain.handle('kb:listFolders', () => {
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    return new KnowledgeBase(getContext().repo.getDb()).listFolders()
+  })
+
+  ipcMain.handle('kb:addFolder', (_e, name: string, description?: string) => {
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(getContext().repo.getDb())
+    if (!name.trim()) return { ok: false, error: '文件夹名不能为空' }
+    const f = kb.addFolder(name.trim(), description?.trim() ?? '')
+    getContext().repo.save()
+    return { ok: true, folder: f }
+  })
+
+  ipcMain.handle('kb:renameFolder', (_e, id: number, name: string, description?: string) => {
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(getContext().repo.getDb())
+    kb.renameFolder(id, name.trim(), description)
+    getContext().repo.save()
+    return { ok: true }
+  })
+
+  ipcMain.handle('kb:deleteFolder', (_e, id: number) => {
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(getContext().repo.getDb())
+    kb.deleteFolder(id)
+    getContext().repo.save()
+    return { ok: true }
+  })
+
+  ipcMain.handle('kb:listItems', (_e, folderId: number) => {
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    return new KnowledgeBase(getContext().repo.getDb()).listItems(folderId)
+  })
+
+  ipcMain.handle('kb:getItem', (_e, id: number) => {
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    return new KnowledgeBase(getContext().repo.getDb()).getItem(id)
+  })
+
+  ipcMain.handle(
+    'kb:addItem',
+    (_e, folderId: number, meta: { title: string; sourceType: string; reason?: string }, body: string, filePath?: string) => {
+      const c = getContext()
+      const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+      const kb = new KnowledgeBase(c.repo.getDb())
+      if (!meta.title.trim()) return { ok: false, error: '标题不能为空' }
+      const item = kb.addItem({
+        folderId,
+        title: meta.title.trim().slice(0, 200),
+        sourceType: meta.sourceType || 'markdown',
+        body,
+        filePath: filePath ?? '',
+        reason: meta.reason?.trim() ?? ''
+      })
+      c.repo.save()
+      return { ok: true, item }
+    }
+  )
+
+  ipcMain.handle('kb:updateItem', (_e, id: number, patch: { title?: string; body?: string; reason?: string }) => {
+    const c = getContext()
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    new KnowledgeBase(c.repo.getDb()).updateItem(id, patch)
+    c.repo.save()
+    return { ok: true }
+  })
+
+  ipcMain.handle('kb:updateReflection', (_e, id: number, text: string) => {
+    const c = getContext()
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    new KnowledgeBase(c.repo.getDb()).updateReflection(id, text)
+    c.repo.save()
+    return { ok: true }
+  })
+
+  ipcMain.handle('kb:deleteItem', (_e, id: number) => {
+    const c = getContext()
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    new KnowledgeBase(c.repo.getDb()).deleteItem(id)
+    c.repo.save()
+    return { ok: true }
+  })
+
+  /** AI 一键总结（用户点击按钮触发） */
+  ipcMain.handle('kb:summarize', async (_e, itemId: number) => {
+    const c = getContext()
+    const llm = c.getLlm()
+    if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(c.repo.getDb())
+    const item = kb.getItem(itemId)
+    if (!item) return { ok: false, error: '资料不存在' }
+    const { summarizeItem } = await import('../knowledge/ai.js')
+    const r = await summarizeItem(kb, item, llm)
+    if (r.ok) c.repo.save()
+    return r
+  })
+
+  /** AI 按文件夹内容延伸（用户点击按钮触发） */
+  ipcMain.handle('kb:extend', async (_e, folderId: number) => {
+    const c = getContext()
+    const llm = c.getLlm()
+    if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(c.repo.getDb())
+    const folders = kb.listFolders()
+    const folder = folders.find(f => f.id === folderId)
+    if (!folder) return { ok: false, error: '文件夹不存在' }
+    const { extendFolder } = await import('../knowledge/ai.js')
+    return extendFolder(kb, folder.name, kb.listItems(folderId), llm)
+  })
+
+  /** 文件导入：主进程弹文件对话框 + 纯 JS 解析（支持 markdown/txt/docx/pptx/xlsx/html） */
+  ipcMain.handle('kb:importFiles', async (_e, folderId: number, reason?: string) => {
+    const c = getContext()
+    const { dialog } = require('electron') as typeof import('electron')
+    const r = await dialog.showOpenDialog({
+      title: '选择要收入知识库的文件',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '支持的文件', extensions: ['md', 'markdown', 'txt', 'html', 'htm', 'docx', 'pptx', 'xlsx'] }
+      ]
+    })
+    if (r.canceled || !r.filePaths.length) return { ok: true, imported: 0, items: [] }
+    const fs = require('node:fs') as typeof import('node:fs')
+    const path = require('node:path') as typeof import('node:path')
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const { unzipOffice, extractText } = await import('../import/office.js')
+    const kb = new KnowledgeBase(c.repo.getDb())
+    const items: unknown[] = []
+    for (const p of r.filePaths) {
+      try {
+        const ext = path.extname(p).toLowerCase().replace('.', '')
+        const sourceType = ext === 'markdown' ? 'markdown' : ext
+        let body = ''
+        if (ext === 'docx' || ext === 'pptx' || ext === 'xlsx') {
+          body = extractText(ext, unzipOffice(new Uint8Array(fs.readFileSync(p))))
+        } else {
+          body = fs.readFileSync(p, 'utf8')
+          if (ext === 'html' || ext === 'htm') {
+            body = body
+              .replace(/<script[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[\s\S]*?<\/style>/gi, '')
+              .replace(/<[^>]*>/g, '\n')
+              .replace(/\n{3,}/g, '\n\n')
+              .trim()
+          }
+        }
+        const item = kb.addItem({
+          folderId,
+          title: path.basename(p, path.extname(p)),
+          sourceType,
+          body,
+          filePath: p,
+          reason: reason?.trim() ?? ''
+        })
+        items.push(item)
+      } catch {
+        // 单个文件失败不阻断其余导入
+      }
+    }
+    c.repo.save()
+    return { ok: true, imported: items.length, items }
+  })
+
   // ---------- labs（v3 实验性功能） ----------
   ipcMain.handle('labs:metrics', async (_e, dateFrom: string, dateTo: string) => {
     const c = getContext()
