@@ -1,45 +1,57 @@
 @echo off
+setlocal EnableExtensions
 chcp 65001 >nul
 title MindTrace Launcher
 cd /d "%~dp0"
 
+set "PACKAGED_APP=%~dp0release\win-unpacked\MindTrace.exe"
+
 echo ============================================
-echo   MindTrace - 一键启动（开发模式 + Mock AI）
+echo   MindTrace 启动器
 echo ============================================
 echo.
 
-where pnpm >nul 2>nul
-if errorlevel 1 (
-  echo [错误] 未找到 pnpm。请先安装 Node.js 18+ 和 pnpm。
+if exist "%PACKAGED_APP%" goto :start_packaged
+
+rem NVM shims can exist and even return exit code 0 without an active runtime.
+node --version <nul 2>&1 | %SystemRoot%\System32\findstr.exe /b /r /c:"v[0-9]" >nul
+if errorlevel 1 goto :runtime_unavailable
+
+call pnpm --version <nul >nul 2>nul
+if errorlevel 1 goto :runtime_unavailable
+
+echo [1/2] 启动 Mock AI 服务器（端口 8787）...
+start "" /b cmd /d /c call pnpm mock
+
+echo [2/2] 启动 MindTrace 开发版...
+echo MindTrace 运行期间请保留这个窗口；关闭窗口会同时停止开发服务。
+echo.
+call pnpm dev
+set "DEV_EXIT=%errorlevel%"
+if not "%DEV_EXIT%"=="0" (
+  echo.
+  echo [错误] MindTrace 开发版启动失败，退出码：%DEV_EXIT%
   pause
-  exit /b 1
 )
+exit /b %DEV_EXIT%
 
-echo [1/2] 启动 Mock AI 服务器（端口 8787，替代 API Key）...
-start "MindTrace Mock LLM" /min cmd /c "pnpm mock"
-
-echo [2/2] 启动 MindTrace 窗口（首次会自动编译，约 20~40 秒，窗口出现前请不要关闭本窗口）...
-start "MindTrace App" /min cmd /c "pnpm dev"
-
-echo.
-echo 等待 MindTrace 窗口出现（最多 60 秒）...
-set /a waited=0
-:waitloop
-timeout /t 3 /nobreak >nul
-set /a waited+=3
-tasklist /fi "imagename eq electron.exe" 2>nul | find /i "electron.exe" >nul
-if not errorlevel 1 goto :bringfront
-if %waited% geq 60 goto :timeoutwarn
-goto :waitloop
-
-:bringfront
-powershell -NoProfile -Command "$p=Get-Process electron -ErrorAction SilentlyContinue | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object -First 1; if($p){Add-Type -Namespace W -Name N -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr h,int c);' -ErrorAction SilentlyContinue; [W.N]::ShowWindow($p.MainWindowHandle,9) | Out-Null; [W.N]::SetForegroundWindow($p.MainWindowHandle) | Out-Null; Write-Host ('窗口已就绪并置于前台: ' + $p.MainWindowTitle)} else {Write-Host '进程已在但窗口未就绪，请稍候片刻'}"
-echo.
-echo 本窗口可以关闭了。MindTrace 窗口与 Mock AI 窗口请自行保留/关闭。
-timeout /t 8 >nul
+:start_packaged
+echo 检测到免安装正式版，正在打开 MindTrace...
+start "" "%PACKAGED_APP%"
 exit /b 0
 
-:timeoutwarn
-echo [提示] 60 秒内未检测到应用进程。请检查上方或最小化的 "MindTrace App" 窗口中的错误信息。
+:runtime_unavailable
+echo [提示] 当前 Node.js/pnpm 运行环境不可用。
+echo        Node.js 未安装，或 NVM 没有活动版本，所以无法运行开发模式。
+echo.
+
+echo [错误] 未找到可用的免安装正式版。
+echo.
+echo 如果这是从 GitHub 新克隆的项目，请先安装并启用 Node.js 22.12+，再安装 pnpm：
+echo   nvm install 22
+echo   nvm use 22
+echo   npm install -g pnpm
+echo   pnpm install
+echo.
 pause
 exit /b 1
