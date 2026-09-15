@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "rootDir": "electron",
+    "outDir": "dist-electron",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": false,
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["electron/**/*.ts", "electron/**/*.d.ts"]
+}
