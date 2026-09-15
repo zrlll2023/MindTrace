@@ -11,6 +11,10 @@ const api = {
     listModels: () => ipcRenderer.invoke('llm:listModels'),
     testConnection: (baseUrl: string, apiKey?: string, model?: string) =>
       ipcRenderer.invoke('llm:testConnection', baseUrl, apiKey, model)
+  },
+  capture: {
+    parse: (raw: string) => ipcRenderer.invoke('capture:parse', raw),
+    commit: (raw: string, entries: unknown[]) => ipcRenderer.invoke('capture:commit', raw, entries)
   }
 }
 
