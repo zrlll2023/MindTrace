@@ -5,6 +5,7 @@ import { AppSettings, DEFAULT_SETTINGS, ProviderPreset } from '../../electron/ty
 export interface SettingsPayload {
   settings: AppSettings
   hasApiKey: boolean
+  hasSearchKey: boolean
   dataDir: string
 }
 
@@ -12,6 +13,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const payload = ref<SettingsPayload>({
     settings: { ...DEFAULT_SETTINGS },
     hasApiKey: false,
+    hasSearchKey: false,
     dataDir: ''
   })
   const presets = ref<ProviderPreset[]>([])
@@ -29,11 +31,12 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  async function save(settings: AppSettings, apiKey?: string): Promise<void> {
+  async function save(settings: AppSettings, apiKey?: string, searchKey?: string): Promise<void> {
     loading.value = true
     try {
-      await window.api.settings.save(settings, apiKey)
+      await window.api.settings.save(settings, apiKey, searchKey)
       if (apiKey) payload.value.hasApiKey = true
+      if (searchKey !== undefined) payload.value.hasSearchKey = searchKey !== ''
       payload.value.settings = { ...settings }
       show('设置已保存', true)
     } catch (e) {

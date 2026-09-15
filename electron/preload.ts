@@ -3,7 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 const api = {
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
-    save: (settings: unknown, apiKey?: string) => ipcRenderer.invoke('settings:save', settings, apiKey),
+    save: (settings: unknown, apiKey?: string, searchKey?: string) =>
+      ipcRenderer.invoke('settings:save', settings, apiKey, searchKey),
     openDataDir: () => ipcRenderer.invoke('settings:openDataDir'),
     getPresets: () => ipcRenderer.invoke('settings:getPresets')
   },

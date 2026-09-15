@@ -42,6 +42,19 @@
         </label>
       </div>
 
+      <div class="field">
+        <label>联网搜索（用于报告「推荐内容」）</label>
+        <select v-model="form.searchProvider">
+          <option value="none">关闭（仅本地分析）</option>
+          <option value="tavily">Tavily（国际，tavily.com 免费申请）</option>
+          <option value="bocha">博查 Bocha（国内，bochaai.com）</option>
+        </select>
+      </div>
+      <div v-if="form.searchProvider !== 'none'" class="field">
+        <label>搜索 API Key {{ store.payload.hasSearchKey ? '（已保存，留空则不修改）' : '' }}</label>
+        <input v-model="searchKey" type="password" placeholder="搜索服务的 API Key" autocomplete="off" />
+      </div>
+
       <div class="row">
         <button :disabled="saving" @click="onSave">{{ saving ? '保存中…' : '保存设置' }}</button>
         <button class="secondary" :disabled="testing" @click="onTest">
@@ -85,6 +98,7 @@ const store = useSettingsStore()
 const form = reactive<AppSettings>({ ...DEFAULT_SETTINGS })
 const presetId = ref('deepseek')
 const apiKey = ref('')
+const searchKey = ref('')
 const models = ref<string[]>([])
 const fetchingModels = ref(false)
 const saving = ref(false)
@@ -119,8 +133,9 @@ async function onFetchModels(): Promise<void> {
 async function onSave(): Promise<void> {
   saving.value = true
   try {
-    await store.save({ ...form }, apiKey.value || undefined)
+    await store.save({ ...form }, apiKey.value || undefined, searchKey.value)
     apiKey.value = ''
+    searchKey.value = ''
   } finally {
     saving.value = false
   }

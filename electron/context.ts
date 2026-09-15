@@ -16,6 +16,7 @@ export interface AppContext {
   repo: Repo
   secrets: SecretBox
   getLlm(): LLMAdapter | null
+  getSearch(): import('./adapters/search').SearchAdapter | null
   getSettings(): AppSettings
   saveSettings(s: AppSettings): void
 }
@@ -52,11 +53,21 @@ export async function initContext(explicitDataDir?: string): Promise<AppContext>
     return new LLMAdapter({ baseUrl: s.baseUrl, apiKey, model: s.model })
   }
 
+  const getSearch = (): import('./adapters/search').SearchAdapter | null => {
+    const s = loadSettings()
+    if (!s.searchProvider || s.searchProvider === 'none') return null
+    const key = secrets.get('search_api_key')
+    if (!key) return null
+    const { SearchAdapter } = require('./adapters/search.js') as typeof import('./adapters/search')
+    return new SearchAdapter({ provider: s.searchProvider, apiKey: key })
+  }
+
   ctx = {
     dataDir,
     repo,
     secrets,
     getLlm,
+    getSearch,
     getSettings: () => ({ ...cachedSettings }),
     saveSettings(s: AppSettings) {
       cachedSettings = s

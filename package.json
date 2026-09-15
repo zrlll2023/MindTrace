@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "mock": "node scripts/mock-llm-server.mjs",
     "dev:main": "tsc -p tsconfig.node.json && electron .",
     "build": "vite build && tsc -p tsconfig.node.json",
     "test": "vitest run",

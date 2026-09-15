@@ -13,17 +13,25 @@ export function registerIpcHandlers(): void {
     return {
       settings: c.getSettings(),
       hasApiKey: c.secrets.get('llm_api_key') != null,
+      hasSearchKey: c.secrets.get('search_api_key') != null,
       dataDir: c.dataDir
     }
   })
 
-  ipcMain.handle('settings:save', (_e, settings: AppSettings, apiKey?: string) => {
-    const c = getContext()
-    c.saveSettings(settings)
-    if (apiKey !== undefined && apiKey !== '') {
-      c.secrets.set('llm_api_key', apiKey)
+  ipcMain.handle(
+    'settings:save',
+    (_e, settings: AppSettings, apiKey?: string, searchKey?: string) => {
+      const c = getContext()
+      c.saveSettings(settings)
+      if (apiKey !== undefined && apiKey !== '') {
+        c.secrets.set('llm_api_key', apiKey)
+      }
+      if (searchKey !== undefined) {
+        if (searchKey === '') c.secrets.delete('search_api_key')
+        else c.secrets.set('search_api_key', searchKey)
+      }
     }
-  })
+  )
 
   ipcMain.handle('settings:openDataDir', async () => {
     const c = getContext()
@@ -124,7 +132,8 @@ export function registerIpcHandlers(): void {
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
     const { AnalyzeEngine } = await import('../analysis/engine.js')
     const engine = new AnalyzeEngine(c.repo, llm, {
-      desensitize: c.getSettings().desensitize
+      desensitize: c.getSettings().desensitize,
+      search: c.getSearch()
     })
     try {
       const report = await engine.analyzeDay(date)
@@ -141,7 +150,8 @@ export function registerIpcHandlers(): void {
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
     const { AnalyzeEngine } = await import('../analysis/engine.js')
     const engine = new AnalyzeEngine(c.repo, llm, {
-      desensitize: c.getSettings().desensitize
+      desensitize: c.getSettings().desensitize,
+      search: c.getSearch()
     })
     try {
       const report = await engine.analyzeWeek(endDate)

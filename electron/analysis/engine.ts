@@ -1,6 +1,7 @@
 import { Repo } from '../db/repository'
 import { LLMAdapter, ChatMessage, ToolSpec, ToolCall } from '../adapters/llm'
 import { AnalysisTools } from './tools'
+import { SearchAdapter } from '../adapters/search'
 import { desensitizeText } from './desensitize'
 import { Report } from '../db/repository'
 
@@ -59,6 +60,22 @@ const TOOL_SPECS: ToolSpec[] = [
         required: ['metricA', 'metricB', 'dateFrom', 'dateTo']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description:
+        '联网搜索与用户兴趣相关的高质量内容（文章、教程、论文、工具）。用于在「兴趣线推进」与「推荐内容」小节为用户找到可读的延伸材料。仅在确有明确兴趣主题时使用。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: '中文或英文搜索词，具体明确' },
+          maxResults: { type: 'number', description: '结果数，默认 5' }
+        },
+        required: ['query']
+      }
+    }
   }
 ]
 
@@ -67,8 +84,9 @@ const SYSTEM_PROMPT = `你是 MindTrace 的个人成长分析师。用户会给�
 写作要求：
 1. **不要复述**记录内容，要提炼：概况一段带过；重点放在规律、联系、用户自己可能没意识到的点。
 2. 主动使用工具深入挖掘：检索相关历史（query_entries）、查看兴趣线（get_thread）、计算相关性（correlate）。**工具调用不超过 6 次。**
-3. 报告须包含这些小节：## 今天概况 / ## 规律与洞察 / ## 兴趣线推进（如有）/ ## 明日建议
-4. 若兴趣线有推进，在「兴趣线推进」小节说明这条线是什么、今天的记录如何推进了它。
+3. 若用户配置了联网搜索（web_search 可用），为核心兴趣线搜索 1~2 次延伸内容，在「推荐内容」小节列出 2~3 条带链接的可读材料（标题+一句话理由）。搜索不计入 6 次上限，但请克制。
+4. 报告须包含这些小节：## 今天概况 / ## 规律与洞察 / ## 兴趣线推进（如有）/ ## 推荐内容（如有搜索结果）/ ## 明日建议
+5. 若兴趣线有推进，在「兴趣线推进」小节说明这条线是什么、今天的记录如何推进了它。
 
 最终输出：一个 JSON 对象（不要 markdown 代码块），形如：
 {
@@ -103,7 +121,7 @@ export class AnalyzeEngine {
   constructor(
     private repo: Repo,
     private llm: LLMAdapter,
-    private opts: { desensitize?: boolean } = {}
+    private opts: { desensitize?: boolean; search?: SearchAdapter | null } = {}
   ) {
     this.tools = new AnalysisTools(repo)
   }
@@ -143,10 +161,14 @@ export class AnalyzeEngine {
     for (let round = 0; round <= MAX_TOOL_CALLS; round++) {
       const isFinalRound = round === MAX_TOOL_CALLS
       let msg: { content: string | null; tool_calls?: ToolCall[] }
+      // 工具列表：未配置搜索时不下发 web_search，避免模型白调用
+      const activeTools = this.opts.search
+        ? TOOL_SPECS
+        : TOOL_SPECS.filter(t => t.function.name !== 'web_search')
       try {
         msg = await this.llm.chatFull(
           messages,
-          isFinalRound ? {} : { tools: TOOL_SPECS }
+          isFinalRound ? {} : { tools: activeTools }
         )
       } catch {
         degraded = true
@@ -163,8 +185,9 @@ export class AnalyzeEngine {
         break
       }
       for (const tc of msg.tool_calls) {
-        if (toolCalls >= MAX_TOOL_CALLS) continue
-        toolCalls++
+        // 联网搜索不计入 6 次本地工具上限（prompt 中已要求克制）
+        if (tc.function.name !== 'web_search' && toolCalls >= MAX_TOOL_CALLS) continue
+        if (tc.function.name !== 'web_search') toolCalls++
         let result: string
         try {
           result = await this.executeTool(tc)
@@ -294,6 +317,17 @@ export class AnalyzeEngine {
         return this.tools.get_thread(args)
       case 'correlate':
         return this.tools.correlate(args)
+      case 'web_search': {
+        if (!this.opts.search) {
+          return JSON.stringify({ error: 'not_configured', hint: '用户未配置搜索服务，请基于本地信息撰写报告' })
+        }
+        try {
+          const results = await this.opts.search.search(args.query, { maxResults: args.maxResults })
+          return JSON.stringify({ results })
+        } catch (e) {
+          return JSON.stringify({ error: (e as Error).message })
+        }
+      }
       default:
         return JSON.stringify({ error: `unknown tool: ${tc.function.name}` })
     }

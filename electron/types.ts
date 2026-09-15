@@ -22,6 +22,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: 'custom', name: '自定义', baseUrl: '' }
 ]
 
+export type SearchProvider = 'none' | 'tavily' | 'bocha'
+
 export interface AppSettings {
   providerId: string
   baseUrl: string
@@ -29,6 +31,7 @@ export interface AppSettings {
   // apiKey 不放这里：只走 SecretBox 加密存储（spec §8）
   desensitize: boolean // 出网脱敏开关
   backupRetention: number
+  searchProvider: SearchProvider // v2：联网搜索（none=关闭）
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -36,7 +39,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   baseUrl: 'https://api.deepseek.com',
   model: '',
   desensitize: true,
-  backupRetention: 30
+  backupRetention: 30,
+  searchProvider: 'none'
 }
 
 export interface ParsedEntry {

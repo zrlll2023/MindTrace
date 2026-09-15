@@ -31,7 +31,8 @@ app.whenReady().then(async () => {
   void (async () => {
     await runBackup(ctx.dataDir, ctx.getSettings().backupRetention)
     await new Scheduler(ctx.repo).ensureReportForToday(ctx.getLlm(), {
-      desensitize: ctx.getSettings().desensitize
+      desensitize: ctx.getSettings().desensitize,
+      search: ctx.getSearch()
     })
   })()
   app.on('activate', () => {
