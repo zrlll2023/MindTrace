@@ -34,6 +34,7 @@ export interface AppSettings {
   searchProvider: SearchProvider // v2：联网搜索（none=关闭）
   embeddingEnabled: boolean // v2.5：语义搜索（复用主提供商 baseUrl+Key，需模型支持 embeddings）
   embeddingModel: string
+  rerankEnabled: boolean // v2.5：LLM 精排（混合搜索 top-20 二次重排）
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -44,7 +45,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backupRetention: 30,
   searchProvider: 'none',
   embeddingEnabled: false,
-  embeddingModel: ''
+  embeddingModel: '',
+  rerankEnabled: false
 }
 
 export interface ParsedEntry {

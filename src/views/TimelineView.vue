@@ -45,7 +45,7 @@
         >
           <span class="badge">{{ KIND_LABELS[e.kind as EntryKind] }}</span>
           <span class="summary">{{ summarize(e) }}</span>
-          <span v-if="semanticOn && e._score != null" class="score">{{ Math.round(e._score * 100) }}%</span>
+          <span v-if="semanticOn && e._score != null" class="score">{{ e._rerank != null ? `已精排 ${Math.round(e._rerank * 100)}%` : `${Math.round(e._score * 100)}%` }}</span>
           <span class="time">{{ e.created_at.slice(11, 16) }}</span>
           <div v-if="semanticOn && e._chunk" class="chunk-hit">匹配片段：{{ e._chunk }}</div>
         </div>
@@ -89,6 +89,7 @@ interface EntryRow {
   created_at: string
   entry_date: string
   _score?: number
+  _rerank?: number
   _chunk?: string
 }
 
@@ -181,10 +182,11 @@ function onSearch(): void {
       if (r.ok) {
         semanticNotice.value = ''
         expandedQueries.value = r.queries
-        entries.value = r.hits.map((h: { score: number; chunk_text?: string } & Record<string, unknown>) => ({
+        entries.value = r.hits.map((h: { score: number; chunk_text?: string; rerank_score?: number } & Record<string, unknown>) => ({
           ...h,
           _score: h.score,
-          _chunk: h.chunk_text
+          _chunk: h.chunk_text,
+          _rerank: h.rerank_score
         })) as never
       } else {
         semanticNotice.value = `搜索失败：${r.error}`

@@ -1,6 +1,6 @@
 # 搜索质量升级实施计划（Chunking + Reranking）
 
-> 日期：2026-09-15 ｜ 状态：执行中 ｜ 前置：混合搜索已完成（a25bee0）
+> 日期：2026-09-15 ｜ 状态：✅ 已完成（里程碑 A `740f609`，里程碑 B 本次提交） ｜ 前置：混合搜索已完成（a25bee0）
 > 约束：遵守 docs/ai-content-contract.md；禁原生模块；每里程碑 commit+push
 
 ## 目标
@@ -22,8 +22,8 @@
 - **B-1 Reranker** `electron/analysis/reranker.ts`
   - `rerank(query, hits, llm)`：LLM 一次调用批量精读 top-20，输出 JSON `{scores: [{index, relevance}]}`（0~1）
   - 契约闸门：非法输出/失败 → **保持 RRF 原序**（绝不丢结果）；index 越界忽略；分数收敛 [0,1]
-- **B-2 设置与接线**：`rerankEnabled` 设置项（默认开）；`hybrid:search` 在 topK>1 且结果≥5 时自动精排
-- **B-3 UI 与验证**：时间线显示「已精排」标识；reranker 单测（合法/非法/部分越界/失败保序）+ E2E 阶段 → **commit + push（里程碑 B）**
+- **B-2 设置与接线**：`rerankEnabled` 设置项（默认关，设置页可开）；`hybrid:search` 结果≥2 且配置了 LLM 时自动精排（实现与计划的偏差：默认关更符合「AI 功能显式开启」的契约原则，成本也只发生在用户知情后）
+- **B-3 UI 与验证**：时间线显示「已精排 xx%」标识（替代融合分）；reranker 单测 6 例（合法/非法/部分越界/失败保序/空列表/≤1 短路）全过 → **commit + push（里程碑 B）**
 
 ## 成本预算
 

@@ -284,10 +284,16 @@ export function registerIpcHandlers(): void {
         const { HybridSearch } = await import('../analysis/hybrid.js')
         const hybrid = new HybridSearch(c.repo, semantic)
         const queries = expand && c.getLlm() ? await hybrid.expandQuery(query, c.getLlm()!) : [query]
-        const hits = await hybrid.searchMultiQuery(queries, topK ?? 10)
+        let hits = await hybrid.searchMultiQuery(queries, topK ?? 10)
+        // v2.5 精排：设置开启 + 有 LLM + 候选 ≥2 时，对融合结果二次重排（失败保序，见 reranker.ts）
+        if (c.getSettings().rerankEnabled && c.getLlm() && hits.length >= 2) {
+          const { rerank } = await import('../analysis/reranker.js')
+          hits = await rerank(query, hits, c.getLlm()!)
+        }
         return {
           ok: true,
           queries,
+          reranked: c.getSettings().rerankEnabled && !!c.getLlm() && hits.some(h => 'rerank_score' in h),
           hits: hits.map(h => ({
             id: h.entry.id,
             kind: h.entry.kind,
@@ -297,7 +303,8 @@ export function registerIpcHandlers(): void {
             raw_text: h.entry.raw_text,
             score: h.score,
             fused_via: h.fused_via,
-            chunk_text: h.chunk_text
+            chunk_text: h.chunk_text,
+            rerank_score: (h as { rerank_score?: number }).rerank_score
           }))
         }
       } catch (e) {

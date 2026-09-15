@@ -84,6 +84,12 @@
         </button>
         <span v-if="indexMsg" :class="indexOk ? 'msg ok' : 'msg err'">{{ indexMsg }}</span>
       </div>
+      <div class="field">
+        <label class="checkbox">
+          <input v-model="form.rerankEnabled" type="checkbox" />
+          启用 AI 精排（Reranking）：搜索后由 AI 精读 top-20 候选并重排，更准但更慢
+        </label>
+      </div>
     </div>
 
     <div class="card">
