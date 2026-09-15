@@ -109,7 +109,7 @@ export class Repo {
       LIMIT ? OFFSET ?`
     const res = this.db.exec(sql, [...params, limit, offset])
     if (!res.length) return []
-    return res[0].values.map(() => null as never).map((_, i) =>
+    return res[0].values.map(() => null as never).map((_: never[], i: number) =>
       this.valuesToEntry(res[0].columns, res[0].values[i])
     )
   }
@@ -125,7 +125,7 @@ export class Repo {
            WHERE entries_fts MATCH ?`,
           [`"${keyword.replace(/"/g, '""')}"`]
         )
-        if (res.length) return res[0].values.map((_, i) => this.valuesToEntry(res[0].columns, res[0].values[i]))
+        if (res.length) return res[0].values.map((_: unknown[], i: number) => this.valuesToEntry(res[0].columns, res[0].values[i]))
         return []
       } catch {
         // FTS 查询语法问题则降级
@@ -137,7 +137,7 @@ export class Repo {
       [like, like]
     )
     if (!res.length) return []
-    return res[0].values.map((_, i) => this.valuesToEntry(res[0].columns, res[0].values[i]))
+    return res[0].values.map((_: unknown[], i: number) => this.valuesToEntry(res[0].columns, res[0].values[i]))
   }
 
   async getEntry(id: number): Promise<Entry | null> {
@@ -175,7 +175,7 @@ export class Repo {
       ? this.db.exec('SELECT * FROM reports WHERE type = ? ORDER BY period DESC', [type])
       : this.db.exec('SELECT * FROM reports ORDER BY period DESC')
     if (!res.length) return []
-    return res[0].values.map((_, i) => this.valuesToReport(res[0].columns, res[0].values[i]))
+    return res[0].values.map((_: unknown[], i: number) => this.valuesToReport(res[0].columns, res[0].values[i]))
   }
 
   // ---------- threads ----------
@@ -196,7 +196,7 @@ export class Repo {
   async listThreads(): Promise<Thread[]> {
     const res = this.db.exec('SELECT * FROM threads ORDER BY updated_at DESC')
     if (!res.length) return []
-    return res[0].values.map((_, i) => this.rowToThreadFromValues(res[0].columns, res[0].values[i]))
+    return res[0].values.map((_: unknown[], i: number) => this.rowToThreadFromValues(res[0].columns, res[0].values[i]))
   }
 
   async associateEntryToThread(entryId: number, threadId: number): Promise<void> {

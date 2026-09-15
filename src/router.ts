@@ -1,0 +1,44 @@
+import { createRouter, createWebHashHistory, RouteRecordRaw } from 'vue-router'
+
+export interface NavRoute {
+  path: string
+  name: string
+  component: () => Promise<unknown>
+  props?: Record<string, unknown>
+  meta?: { nav?: boolean; icon?: string; label?: string }
+}
+
+export const routes: NavRoute[] = [
+  {
+    path: '/',
+    name: 'capture',
+    component: () => import('./views/CaptureView.vue'),
+    meta: { nav: true, icon: '💬', label: '记录' }
+  },
+  {
+    path: '/timeline',
+    name: 'timeline',
+    // Task 5 之前临时复用占位组件
+    component: () => import('./views/PlaceholderView.vue'),
+    props: { title: '时间线' },
+    meta: { nav: true, icon: '🗓️', label: '时间线' }
+  },
+  {
+    path: '/reports',
+    name: 'reports',
+    component: () => import('./views/PlaceholderView.vue'),
+    props: { title: '报告' },
+    meta: { nav: true, icon: '📊', label: '报告' }
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('./views/SettingsView.vue'),
+    meta: { nav: true, icon: '⚙️', label: '设置' }
+  }
+]
+
+export const router = createRouter({
+  history: createWebHashHistory(),
+  routes
+})

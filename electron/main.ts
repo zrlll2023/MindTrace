@@ -1,7 +1,9 @@
 import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
+import { initContext } from './context'
+import { registerIpcHandlers } from './ipc/handlers'
 
-function createWindow() {
+async function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -19,10 +21,15 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(async () => {
+  await initContext()
+  registerIpcHandlers()
+  await createWindow()
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
-})
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })

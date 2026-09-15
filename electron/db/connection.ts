@@ -30,7 +30,7 @@ function locateWasmPath(): string {
 export async function initDb(dataDir: string): Promise<Database> {
   if (!SQL) {
     const wasmBinary = fs.readFileSync(locateWasmPath())
-    SQL = await initSqlJs({ wasmBinary })
+    SQL = await initSqlJs({ wasmBinary: wasmBinary as unknown as ArrayBuffer })
   }
 
   if (dataDir === ':memory:') {
