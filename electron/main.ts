@@ -10,11 +10,17 @@ async function createWindow() {
     width: 1200,
     height: 800,
     title: 'MindTrace',
+    show: false, // 内容就绪后再显示，避免空白窗落在控制台后面
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false
     }
+  })
+  win.once('ready-to-show', () => {
+    win.show()
+    win.focus()
+    if (process.platform === 'win32') app.focus({ steal: true }) // 从启动它的控制台手中抢回焦点
   })
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL)
