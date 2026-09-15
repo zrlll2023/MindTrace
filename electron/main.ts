@@ -6,6 +6,7 @@ import { Scheduler } from './scheduler'
 import { runBackup } from './store/backup'
 import fs from 'node:fs'
 import { dataLocationStatus } from './store/data-location'
+import { initializeUpdater, startUpdaterChecks } from './updater'
 
 async function createWindow() {
   const dark = nativeTheme.shouldUseDarkColors
@@ -53,7 +54,13 @@ app.whenReady().then(async () => {
   }
   const ctx = await initContext(explicitDataDir)
   registerIpcHandlers()
+  initializeUpdater({
+    beforeInstall: async () => {
+      await runBackup(ctx.dataDir, ctx.getSettings().backupRetention)
+    }
+  })
   await createWindow()
+  startUpdaterChecks()
   // 当日首开自动生成日报（spec §11.1）+ 每日备份——后台执行，不阻塞窗口
   void (async () => {
     await runBackup(ctx.dataDir, ctx.getSettings().backupRetention)

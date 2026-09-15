@@ -53,6 +53,20 @@
         </nav>
 
         <div class="footer">
+          <div class="update-widget">
+            <button
+              class="update-button"
+              :disabled="!canRequestUpdate"
+              :title="updateButtonTitle"
+              @click="requestUpdate"
+            >
+              <Icon :name="hasUpdate ? 'download' : 'check'" :size="14" />
+              <span>{{ updateButtonText }}</span>
+            </button>
+            <div v-if="updateStatusText" class="update-status" :class="{ error: updateState?.phase === 'error' }" aria-live="polite">
+              {{ updateStatusText }}
+            </div>
+          </div>
           <div class="footer-tools">
             <div class="local-note">
               <b>本地优先</b>数据不出设备
@@ -78,17 +92,54 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { NavRoute, routes } from './router'
 import Icon from './components/Icon.vue'
 import { useThemeStore } from './stores/theme'
+import type { UpdateState } from '../electron/updater'
 
 const route = useRoute()
 const theme = useThemeStore()
 const minimizeWindow = () => window.api.windowControls.minimize()
 const toggleMaximizeWindow = () => window.api.windowControls.toggleMaximize()
 const closeWindow = () => window.api.windowControls.close()
+const updateState = ref<UpdateState | null>(null)
+let stopUpdateListener: (() => void) | undefined
+
+const hasUpdate = computed(() => ['available', 'downloading', 'downloaded', 'error'].includes(updateState.value?.phase ?? ''))
+const canRequestUpdate = computed(() => ['available', 'downloaded', 'error'].includes(updateState.value?.phase ?? ''))
+const updateButtonText = computed(() => hasUpdate.value
+  ? '更新到最新版本'
+  : `已是最新版本 v${updateState.value?.currentVersion ?? '0.3.0'}`)
+const updateButtonTitle = computed(() => {
+  if (updateState.value?.phase === 'available') return `下载 MindTrace v${updateState.value.latestVersion}`
+  if (updateState.value?.phase === 'downloaded') return '重启并安装已下载的更新'
+  if (updateState.value?.phase === 'error') return '重新检查更新'
+  return updateButtonText.value
+})
+const updateStatusText = computed(() => {
+  const value = updateState.value
+  if (!value) return '正在检查更新...'
+  if (value.phase === 'idle' || value.phase === 'checking') return '正在检查更新...'
+  if (value.phase === 'available') return `发现新版本 v${value.latestVersion}`
+  if (value.phase === 'downloading') return `正在下载 ${value.percent ?? 0}%`
+  if (value.phase === 'downloaded') return '下载完成，再次点击安装'
+  if (value.phase === 'error') return `检测失败：${value.error ?? '未知错误'}`
+  if (value.phase === 'unsupported') return '开发模式不检查更新'
+  return ''
+})
+
+async function requestUpdate(): Promise<void> {
+  if (!canRequestUpdate.value) return
+  updateState.value = await window.api.updater.requestUpdate()
+}
+
+onMounted(async () => {
+  stopUpdateListener = window.api.updater.onState((state: UpdateState) => { updateState.value = state })
+  updateState.value = await window.api.updater.getState()
+})
+onBeforeUnmount(() => stopUpdateListener?.())
 
 const ORDER_KEY = 'mt-nav-order'
 const movableRoutes = routes.filter(r => r.meta?.nav && r.path !== '/settings')

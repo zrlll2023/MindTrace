@@ -6,6 +6,15 @@ const api = {
     toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
     close: () => ipcRenderer.invoke('window:close')
   },
+  updater: {
+    getState: () => ipcRenderer.invoke('updater:getState'),
+    requestUpdate: () => ipcRenderer.invoke('updater:requestUpdate'),
+    onState: (listener: (state: import('./updater').UpdateState) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: import('./updater').UpdateState) => listener(state)
+      ipcRenderer.on('updater:state', handler)
+      return () => ipcRenderer.removeListener('updater:state', handler)
+    }
+  },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     save: (settings: unknown, apiKey?: string, searchKey?: string) =>
