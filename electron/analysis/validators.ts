@@ -11,6 +11,22 @@ const MAX_REPORT_MD = 50000
 const MAX_THREAD_TITLE = 60
 const MAX_THREAD_DESC = 300
 
+/** 严格校验本地日期和可选分钟时间，避免 SQLite 接收自动进位的日期。 */
+export function validateEntryMoment(entryDate: unknown, entryTime: unknown): { ok: boolean; reason?: string } {
+  if (typeof entryDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) {
+    return { ok: false, reason: '日期格式应为 YYYY-MM-DD' }
+  }
+  const [year, month, day] = entryDate.split('-').map(Number)
+  const probe = new Date(year, month - 1, day)
+  if (probe.getFullYear() !== year || probe.getMonth() !== month - 1 || probe.getDate() !== day) {
+    return { ok: false, reason: '发生日期无效' }
+  }
+  if (entryTime != null && entryTime !== '' && (typeof entryTime !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(entryTime))) {
+    return { ok: false, reason: '发生时间格式应为 HH:mm' }
+  }
+  return { ok: true }
+}
+
 /** 纯文本净化：剥离 HTML 标签与 Markdown 标记，截断到上限 */
 export function sanitizeText(input: unknown): string {
   if (typeof input !== 'string') return ''

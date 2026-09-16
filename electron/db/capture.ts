@@ -38,8 +38,8 @@ export class CaptureHistory {
     return this.list().at(-1)!
   }
 
-  markCommitted(id: number): void {
-    this.db.run('UPDATE capture_messages SET committed = 1, parsed_json = NULL WHERE id = ?', [id])
+  markCommitted(id: number, text = '已保存到时间线'): void {
+    this.db.run('UPDATE capture_messages SET committed = 1, parsed_json = NULL, text = ?, error = ? WHERE id = ?', [text, '', id])
   }
 
   clear(): void { this.db.run('DELETE FROM capture_messages') }

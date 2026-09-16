@@ -9,10 +9,9 @@ import { CaptureHistory } from '../db/capture'
 import { KnowledgeBase } from '../db/knowledge'
 import { ProfileStore } from '../db/profile'
 import { inspectMigration, migrateData, previousDataDir } from '../store/data-location'
+import { CaptureChoice, commitCaptureEntries } from '../capture-commit'
 
 interface KnowledgeChoice { addToKnowledge?: boolean; folderId?: number; newFolderName?: string; reason?: string }
-interface CaptureChoice extends KnowledgeChoice { kind: string; content: object; confidence: number }
-
 function knowledgeText(kind: string, content: Record<string, unknown>, raw: string): string {
   if (typeof content.text === 'string') return content.text
   return raw || JSON.stringify(content, null, 2)
@@ -169,45 +168,10 @@ export function registerIpcHandlers(): void {
     'capture:commit',
     async (_e, messageId: number, entries: CaptureChoice[]) => {
       const c = getContext()
-      const db = c.repo.getDb()
       try {
-        const { validateParsedEntry } = await import('../analysis/validators.js')
-        const history = new CaptureHistory(db)
-        const messages = history.list()
-        const assistantIndex = messages.findIndex(m => m.id === messageId && m.role === 'assistant')
-        if (assistantIndex <= 0 || messages[assistantIndex].committed) throw new Error('待确认的 AI 解析结果不存在或已归档')
-        const raw = assistantIndex > 0 ? [...messages.slice(0, assistantIndex)].reverse().find(m => m.role === 'user')?.text ?? '' : ''
-        const saved = [] as Awaited<ReturnType<typeof c.repo.insertEntry>>[]
-        const kb = new KnowledgeBase(db)
-        db.run('BEGIN')
-        for (const entry of entries) {
-          // 契约闸门：非法条目兜底为 other/confidence=0，绝不丢用户原文
-          const v = validateParsedEntry(entry)
-          const kind = v.ok ? v.entry!.kind : 'other'
-          const content = v.ok ? v.entry!.content : { text: String(entry.content ?? '') }
-          const confidence = v.ok ? v.entry!.confidence : 0
-          const e: NewEntry = {
-            raw_text: raw,
-            kind: kind as NewEntry['kind'],
-            content: JSON.stringify(content),
-            confidence,
-            source: 'chat'
-          }
-          const savedEntry = await c.repo.insertEntry(e)
-          saved.push(savedEntry)
-          if (kind !== 'sleep' && entry.addToKnowledge) {
-            const folderId = entry.folderId ?? kb.ensureSystemFolder('ai_quick_capture', 'AI 快速记录').id
-            if (!kb.listFolders().some(f => f.id === folderId)) throw new Error('选择的知识库文件夹不存在')
-            const body = knowledgeText(kind, content, raw)
-            kb.addItem({ folderId, title: knowledgeTitle(kind, body), sourceType: 'entry', body, reason: entry.reason, sourceEntryId: savedEntry.id })
-          }
-        }
-        history.markCommitted(messageId)
-        db.run('COMMIT')
-        c.repo.save()
+        const saved = await commitCaptureEntries(c.repo, messageId, entries)
         return { ok: true, entries: saved }
       } catch (err) {
-        try { db.run('ROLLBACK') } catch { /* no active transaction */ }
         return { ok: false, error: (err as Error).message }
       }
     }

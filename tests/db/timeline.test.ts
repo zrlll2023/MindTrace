@@ -56,4 +56,14 @@ describe('时间线查询', () => {
     const all = await repo.listEntries({})
     expect(all).toHaveLength(5)
   })
+
+  it('同一天优先按发生时间倒序，未标时间按保存顺序排在后面', async () => {
+    const repo = new Repo(await initDb(':memory:'))
+    const base = { raw_text: 'r', kind: 'event' as const, content: JSON.stringify({ text: 'x' }), confidence: 1, source: 'chat', entry_date: '2026-09-16' }
+    await repo.insertEntry({ ...base, content: JSON.stringify({ text: '未标时间' }) })
+    await repo.insertEntry({ ...base, content: JSON.stringify({ text: '上午' }), entry_time: '09:00' })
+    await repo.insertEntry({ ...base, content: JSON.stringify({ text: '晚上' }), entry_time: '20:30' })
+    const entries = await repo.listEntries({})
+    expect(entries.map(entry => entry.entry_time)).toEqual(['20:30', '09:00', null])
+  })
 })

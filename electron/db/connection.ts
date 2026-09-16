@@ -78,7 +78,8 @@ function migrate(db: Database): void {
       confidence REAL NOT NULL DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'chat',
       created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-      entry_date TEXT NOT NULL DEFAULT (date('now', 'localtime'))
+      entry_date TEXT NOT NULL DEFAULT (date('now', 'localtime')),
+      entry_time TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(entry_date);
     CREATE INDEX IF NOT EXISTS idx_entries_kind ON entries(kind);
@@ -134,6 +135,8 @@ function migrate(db: Database): void {
 
   // 增量迁移：导入去重键（幂等）
   const cols = db.exec("PRAGMA table_info(entries)")
+  const hasEntryTime = cols.length && cols[0].values.some(v => v[1] === 'entry_time')
+  if (!hasEntryTime) db.exec('ALTER TABLE entries ADD COLUMN entry_time TEXT')
   const hasDedup = cols.length && cols[0].values.some(v => v[1] === 'dedup_key')
   if (!hasDedup) {
     db.exec('ALTER TABLE entries ADD COLUMN dedup_key TEXT')

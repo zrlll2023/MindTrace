@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { LLMAdapter } from '../../electron/adapters/llm'
-import { parseDumpWith } from '../../electron/analysis/parser'
+import { parseCaptureWith, parseDumpWith } from '../../electron/analysis/parser'
 
 const fakeCfg = { baseUrl: 'https://x', apiKey: 'k', model: 'm' }
 
@@ -58,5 +58,31 @@ describe('parseDump', () => {
     const out = await parseDumpWith(fake, '睡了8小时')
     expect(out).toHaveLength(1)
     expect(out[0].kind).toBe('sleep')
+  })
+
+  it('保留识别到的发生时间，并用本地今天补齐缺失日期', async () => {
+    const fake = fakeAdapter()
+    let call = 0
+    fake.chat = async () => {
+      call++
+      return call === 1
+        ? JSON.stringify({ entries: [{ kind: 'event', content: { text: '跨年聚会' }, confidence: 0.9, entryDate: '2025-12-31', entryTime: '23:30' }], profileDraft: {} })
+        : JSON.stringify({ entries: [{ kind: 'idea', content: { text: '没有说日期' }, confidence: 0.8 }], profileDraft: {} })
+    }
+    const now = new Date(2026, 0, 1, 9, 5)
+    const explicit = await parseCaptureWith(fake, '昨晚十一点半参加了跨年聚会', [], {}, now)
+    const implicit = await parseCaptureWith(fake, '想到一个点子', [], {}, now)
+    expect(explicit.entries[0]).toMatchObject({ entryDate: '2025-12-31', entryTime: '23:30' })
+    expect(implicit.entries[0]).toMatchObject({ entryDate: '2026-01-01' })
+    expect(implicit.entries[0].entryTime).toBeUndefined()
+  })
+
+  it('AI 返回空数组时保留原文为待确认的 other 条目', async () => {
+    const fake = fakeAdapter()
+    fake.chat = async () => JSON.stringify({ entries: [], profileDraft: {} })
+    const out = await parseCaptureWith(fake, '这段话也不能丢', [], {}, new Date(2026, 8, 16, 12, 0))
+    expect(out.entries).toEqual([
+      { kind: 'other', originalKind: 'other', content: { text: '这段话也不能丢' }, confidence: 0, entryDate: '2026-09-16' }
+    ])
   })
 })

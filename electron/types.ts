@@ -58,6 +58,12 @@ export interface ParsedEntry {
   kind: EntryKind
   content: Record<string, unknown>
   confidence: number
+  /** 事件发生日期（设备本地日期），YYYY-MM-DD */
+  entryDate: string
+  /** 可选的事件发生时间（设备本地时间），HH:mm */
+  entryTime?: string
+  /** AI 初始识别类型；用于限制确认前的类型修正范围 */
+  originalKind?: EntryKind
 }
 
 export const KIND_LABELS: Record<EntryKind, string> = {

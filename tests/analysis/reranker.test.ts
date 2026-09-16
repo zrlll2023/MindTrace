@@ -11,8 +11,9 @@ function hit(id: number, text: string): KeywordHit {
       content: JSON.stringify({ text }),
       confidence: 1,
       source: 'chat',
-      created_at: '2026-09-15 10:00:00',
-      entry_date: '2026-09-15'
+    created_at: '2026-09-15 10:00:00',
+    entry_date: '2026-09-15',
+    entry_time: null
     },
     score: 0.5,
     fused_via: ['keyword']

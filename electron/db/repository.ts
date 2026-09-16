@@ -12,6 +12,8 @@ export interface NewEntry {
   source: string
   /** 可选：显式指定所属日期（测试/导入用）；缺省取当天 */
   entry_date?: string
+  /** 可选：事件发生时间，HH:mm；null/缺省表示用户未说明 */
+  entry_time?: string | null
   /** 可选：导入去重键（如 chatgpt:convId:msgIdx）；相同键不重复导入 */
   dedup_key?: string
 }
@@ -20,6 +22,7 @@ export interface Entry extends NewEntry {
   id: number
   created_at: string
   entry_date: string
+  entry_time: string | null
 }
 
 export interface EntryFilter {
@@ -90,6 +93,10 @@ export class Repo {
     if (e.entry_date) {
       cols.push('entry_date')
       vals.push(e.entry_date)
+    }
+    if (e.entry_time) {
+      cols.push('entry_time')
+      vals.push(e.entry_time)
     }
     if (e.dedup_key) {
       cols.push('dedup_key')
@@ -173,7 +180,11 @@ export class Repo {
     const offset = filter.offset ?? 0
     const sql = `SELECT * FROM entries
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-      ORDER BY created_at DESC, id DESC
+      ORDER BY entry_date DESC,
+        CASE WHEN entry_time IS NULL OR entry_time = '' THEN 1 ELSE 0 END,
+        entry_time DESC,
+        created_at DESC,
+        id DESC
       LIMIT ? OFFSET ?`
     const res = this.db.exec(sql, [...params, limit, offset])
     if (!res.length) return []

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   validateParsedEntry,
   validateReportPayload,
+  validateEntryMoment,
   sanitizeText,
   KIND_VALUES
 } from '../../electron/analysis/validators'
@@ -73,6 +74,19 @@ describe('validateParsedEntry', () => {
 
   it('文本型缺 text 时拒绝（other 兜底交给上层）', () => {
     expect(validateParsedEntry({ kind: 'idea', content: {}, confidence: 1 }).ok).toBe(false)
+  })
+})
+
+describe('validateEntryMoment', () => {
+  it('接受真实日期和可选分钟时间', () => {
+    expect(validateEntryMoment('2026-09-16', '08:05').ok).toBe(true)
+    expect(validateEntryMoment('2024-02-29', undefined).ok).toBe(true)
+  })
+
+  it('拒绝自动进位日期和非法时间', () => {
+    expect(validateEntryMoment('2026-02-30', '').ok).toBe(false)
+    expect(validateEntryMoment('2026-09-16', '24:00').ok).toBe(false)
+    expect(validateEntryMoment('2026-09-16', '9:30').ok).toBe(false)
   })
 })
 

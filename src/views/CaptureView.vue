@@ -114,22 +114,20 @@
               <p v-if="m.error" class="err">⚠️ {{ m.error }}</p>
               <p v-if="m.text">{{ m.text }}</p>
               <template v-if="m.parsed && !m.committed">
-                <EntryCard
-                  v-for="(p, j) in m.parsed"
-                  :key="j"
-                  :entry="p"
-                  @remove="m.parsed!.splice(j, 1)"
-                />
-                <div v-for="(p, j) in m.parsed" :key="`kb-${j}`" class="ai-kb-choice">
-                  <label v-if="p.kind !== 'sleep'" class="checkbox">
-                    <input v-model="p.addToKnowledge" type="checkbox" />加入知识库
-                  </label>
-                  <select v-if="p.kind !== 'sleep' && p.addToKnowledge" v-model.number="p.folderId">
-                    <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
-                  </select>
+                <div v-for="(p, j) in m.parsed" :key="j" class="capture-entry-wrap">
+                  <EntryCard :entry="p" @remove="m.parsed!.splice(j, 1)" />
+                  <div v-if="p.kind !== 'sleep'" class="ai-kb-choice">
+                    <label class="checkbox">
+                      <input v-model="p.addToKnowledge" type="checkbox" />同时加入知识库
+                    </label>
+                    <select v-if="p.addToKnowledge" v-model.number="p.folderId">
+                      <option :value="undefined">AI 快速记录（默认）</option>
+                      <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+                    </select>
+                  </div>
                 </div>
-                <button class="primary" :disabled="!m.parsed?.length" @click="archiveMessage(m)">
-                  <Icon name="check" :size="15" />确认归档（{{ m.parsed?.length }} 条）
+                <button class="primary" :disabled="!canArchive(m) || store.isCommitting(m.id)" @click="archiveMessage(m)">
+                  <Icon name="check" :size="15" />{{ store.isCommitting(m.id) ? '保存中…' : `保存到时间线（${m.parsed?.length} 条）` }}
                 </button>
               </template>
               <div v-if="m.profileDraft && Object.keys(m.profileDraft).length" class="profile-draft">
@@ -170,13 +168,14 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, reactive } from 'vue'
-import { useCaptureStore, ChatMessageItem } from '../stores/capture'
+import { useCaptureStore, ChatMessageItem, isCaptureEntryValid } from '../stores/capture'
 import EntryCard from '../components/EntryCard.vue'
 import Icon from '../components/Icon.vue'
 import DatePicker from '../components/DatePicker.vue'
 import TimeRangePicker, { TimeRangeValue } from '../components/TimeRangePicker.vue'
 import { EntryKind } from '../../electron/types'
 import { KIND_PLAIN, kindClass } from '../utils/kinds'
+import { localDateString } from '../utils/datetime'
 
 const store = useCaptureStore()
 const listEl = ref<HTMLElement>()
@@ -195,7 +194,7 @@ const manualText = ref('')
 const manualSleepRange = ref<TimeRangeValue | null>(null)
 const manualFrom = ref('')
 const manualNegative = ref(false)
-const manualDate = ref(new Date().toISOString().slice(0, 10))
+const manualDate = ref(localDateString())
 const manualSaving = ref(false)
 const manualMsg = ref('')
 const manualOk = ref(false)
@@ -308,6 +307,10 @@ async function archiveMessage(m: ChatMessageItem): Promise<void> {
   if (m.parsed) await store.commit(m, m.parsed)
 }
 
+function canArchive(m: ChatMessageItem): boolean {
+  return !!m.parsed?.length && m.parsed.every(isCaptureEntryValid)
+}
+
 async function loadFolders(): Promise<void> {
   folders.value = await window.api.kb.listFolders()
   const aiFolder = folders.value.find(f => f.system_key === 'ai_quick_capture')
@@ -414,7 +417,9 @@ watch(mode, v => localStorage.setItem('mt-capture-mode', v))
 .chat-msg.assistant .bubble { min-width: 320px; }
 .bubble .primary { margin-top: 8px; }
 .err { color: var(--danger); font-size: 13px; }
-.ai-kb-choice { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; font-size: 12px; }
+.capture-entry-wrap { margin: 7px 0; }
+.capture-entry-wrap :deep(.entry-card) { margin-bottom: 0; }
+.ai-kb-choice { display: flex; align-items: center; gap: 8px; margin: 0; padding: 7px 12px; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--r-md) var(--r-md); background: var(--surface-2); font-size: 12px; }
 .ai-kb-choice select { width: auto; min-width: 160px; padding: 5px 8px; }
 .profile-draft { margin: 10px 0; padding: 10px 12px; background: var(--accent-weak); border-radius: var(--r); font-size: 12.5px; }
 .draft-field { display: flex; align-items: flex-start; gap: 7px; margin: 7px 0; }

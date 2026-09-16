@@ -57,7 +57,7 @@
             class="entry"
             @click="openDetail(e)"
           >
-            <span class="t">{{ e.created_at.slice(11, 16) }}</span>
+            <span class="t">{{ e.entry_time || '未标时间' }}</span>
             <span class="kind-badge" :class="kindClass(e.kind)">
               <span class="kind-dot" />{{ kindLabel(e.kind) }}
             </span>
@@ -88,7 +88,11 @@
           <span class="kind-badge" :class="kindClass(detail.kind)">
             <span class="kind-dot" />{{ kindLabel(detail.kind) }}
           </span>
-          <span class="meta">{{ detail.created_at }} · 置信度 {{ Math.round(detail.confidence * 100) }}%</span>
+          <span class="meta">
+            发生于 {{ detail.entry_date }}{{ detail.entry_time ? ` ${detail.entry_time}` : '（未标时间）' }}
+            · 保存于 {{ detail.created_at }}
+            · 置信度 {{ Math.round(detail.confidence * 100) }}%
+          </span>
           <button class="close" title="关闭" @click="detail = null">
             <Icon name="close" :size="16" />
           </button>
@@ -122,6 +126,7 @@ import { EntryKind, TimelineFilter } from '../../electron/types'
 import Icon from '../components/Icon.vue'
 import DatePicker from '../components/DatePicker.vue'
 import { KIND_PLAIN, kindClass, kindLabel } from '../utils/kinds'
+import { localDateString } from '../utils/datetime'
 
 interface EntryRow {
   id: number
@@ -131,6 +136,7 @@ interface EntryRow {
   confidence: number
   created_at: string
   entry_date: string
+  entry_time: string | null
   _score?: number
   _rerank?: number
   _chunk?: string
@@ -160,7 +166,7 @@ function openKnowledge(): void { if (detailKnowledgeId.value) void router.push({
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10)
+  return localDateString()
 }
 
 /** 2026-09-15 → 09月15日 / 今天 / 昨天 */
@@ -169,7 +175,7 @@ function formatDay(d: string): string {
   if (d === t) return '今天'
   const y = new Date()
   y.setDate(y.getDate() - 1)
-  if (d === y.toISOString().slice(0, 10)) return '昨天'
+  if (d === localDateString(y)) return '昨天'
   const [, m, day] = d.split('-')
   return `${m}月${Number(day)}日`
 }
@@ -188,7 +194,15 @@ const groups = computed(() => {
   }
   return [...map.entries()]
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .map(([date, items]) => ({ date, items }))
+    .map(([date, items]) => ({
+      date,
+      items: items.sort((a, b) => {
+        if (a.entry_time && b.entry_time) return b.entry_time.localeCompare(a.entry_time)
+        if (a.entry_time) return -1
+        if (b.entry_time) return 1
+        return b.created_at.localeCompare(a.created_at) || b.id - a.id
+      })
+    }))
 })
 
 function summarize(e: EntryRow): string {

@@ -7,7 +7,7 @@ describe('持久快速记录与用户资料', () => {
   it('保存消息、解析结果并限制发送上下文', async () => {
     const history = new CaptureHistory(await initDb(':memory:'))
     history.add('user', '我今天睡了八小时')
-    const assistant = history.add('assistant', '请确认', { parsed: [{ kind: 'sleep', content: { hours: 8 }, confidence: 1 }] })
+    const assistant = history.add('assistant', '请确认', { parsed: [{ kind: 'sleep', content: { hours: 8 }, confidence: 1, entryDate: '2026-09-16' }] })
     expect(history.list()[1].parsed?.[0].kind).toBe('sleep')
     history.markCommitted(assistant.id)
     expect(history.list()[1].committed).toBe(true)
