@@ -11,7 +11,7 @@
         <button :class="tab === 'weekly' ? 'seg on' : 'seg'" @click="switchTab('weekly')">周报</button>
       </div>
       <div class="actions">
-        <input v-model="genDate" type="date" />
+        <DatePicker v-model="genDate" />
         <button class="primary" :disabled="generating" @click="generate">
           <Icon name="sparkles" :size="15" />
           {{ generating ? '生成中…' : tab === 'daily' ? '生成该日日报' : '生成该周周报' }}
@@ -60,6 +60,7 @@ import { onMounted, ref, computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import Icon from '../components/Icon.vue'
+import DatePicker from '../components/DatePicker.vue'
 
 interface ReportRow {
   id: number
@@ -142,6 +143,7 @@ onMounted(() => void loadArchive())
   gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
 }
 .actions { display: flex; gap: 10px; align-items: center; }
+.actions :deep(.dp--main) { width: 150px; }
 
 .body { display: flex; gap: 18px; flex: 1; min-height: 0; align-items: flex-start; }
 .archive { width: 168px; flex: 0 0 168px; }

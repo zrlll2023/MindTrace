@@ -627,3 +627,89 @@ button.icon-btn { padding: 5px; width: 28px; height: 28px; }
   .local-note { display: none; }
   .content { padding: 18px 16px 40px; }
 }
+
+/* ============================================================
+   vue-datepicker v14 主题适配 —— 映射到 MindTrace 设计 token
+   v14 主题类为 .dp--theme-light / .dp--theme-dark（组件无 theme prop，
+   默认渲染 light），这里让两个类都指向同一套应用变量，
+   浅/深色随 data-theme 自动切换，无需 JS 参与
+   ============================================================ */
+.dp--theme-light,
+.dp--theme-dark {
+  --dp-background-color: var(--surface);
+  --dp-text-color: var(--text);
+  --dp-hover-color: var(--surface-2);
+  --dp-hover-text-color: var(--text);
+  --dp-hover-icon-color: var(--text-2);
+  --dp-primary-color: var(--accent);
+  --dp-primary-text-color: var(--on-accent);
+  --dp-primary-disabled-color: var(--accent-weak);
+  --dp-secondary-color: var(--text-3);
+  --dp-border-color: var(--border-strong);
+  --dp-menu-border-color: var(--border);
+  --dp-border-color-hover: var(--accent);
+  --dp-border-color-focus: var(--accent);
+  --dp-disabled-color: var(--surface-2);
+  --dp-disabled-color-text: var(--text-3);
+  --dp-scroll-bar-background: var(--border-strong);
+  --dp-scroll-bar-color: var(--text-3);
+  --dp-success-color: var(--ok);
+  --dp-success-color-disabled: var(--surface-3);
+  --dp-icon-color: var(--text-3);
+  --dp-danger-color: var(--danger);
+  --dp-marker-color: var(--accent);
+  --dp-tooltip-color: var(--surface-3);
+  --dp-highlight-color: var(--accent-weak);
+  --dp-range-between-dates-background-color: var(--accent-weak);
+  --dp-range-between-dates-text-color: var(--accent-text);
+  --dp-range-between-border-color: transparent;
+  --dp-loader: 5px solid var(--accent);
+  --dp-font-family: inherit;
+  --dp-font-size: 13.5px;
+  --dp-preview-font-size: 12px;
+  --dp-time-font-size: 1.4rem;
+  --dp-border-radius: var(--r);
+  --dp-cell-border-radius: var(--r-sm);
+  --dp-input-padding: 8px 30px 8px 12px;
+  --dp-input-not-clearable-padding: 30px;
+  --dp-menu-min-width: 280px;
+  --dp-menu-padding: 8px;
+  --dp-cell-size: 34px;
+  --dp-common-padding: 8px;
+  --dp-action-row-padding: 6px;
+  --dp-animation-duration: 0.15s;
+}
+
+/* 弹层浮在页面之上，投影与圆角贴近现有卡片 */
+.dp--menu {
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--r-md);
+}
+.dp--main { font-family: inherit; }
+
+/* 输入框：对齐全局 input 观感（聚焦光环同全局规则） */
+.dp--input {
+  font-family: inherit;
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+/* 全局 input[type='text'] 的选择器优先级更高，需要在组件范围内恢复图标留白。 */
+.dp--main .dp--input {
+  padding: var(--dp-input-padding);
+}
+.dp--main .dp--input.dp--input-icon-pad {
+  padding-inline-start: var(--dp-input-icon-padding);
+}
+.dp--input-focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-weak);
+  outline: none;
+}
+.dp--clear-btn {
+  opacity: 0.6;
+}
+.dp--clear-btn:hover {
+  opacity: 1;
+}
+.dp--input-invalid {
+  box-shadow: none;
+}

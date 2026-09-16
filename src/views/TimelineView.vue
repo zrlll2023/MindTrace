@@ -18,9 +18,9 @@
         </button>
       </div>
       <div class="filters">
-        <input v-model="dateFrom" type="date" @change="reload" />
+        <DatePicker v-model="dateFrom" placeholder="开始日期" clearable @update:model-value="reload" />
         <span class="sep">至</span>
-        <input v-model="dateTo" type="date" @change="reload" />
+        <DatePicker v-model="dateTo" placeholder="结束日期" clearable @update:model-value="reload" />
         <label class="search-box">
           <Icon name="search" :size="15" />
           <input
@@ -120,6 +120,7 @@ import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { EntryKind, TimelineFilter } from '../../electron/types'
 import Icon from '../components/Icon.vue'
+import DatePicker from '../components/DatePicker.vue'
 import { KIND_PLAIN, kindClass, kindLabel } from '../utils/kinds'
 
 interface EntryRow {
@@ -307,7 +308,7 @@ onMounted(() => void load())
 
 .filters { display: flex; gap: 10px; align-items: center; font-size: 13px; flex-wrap: wrap; }
 .filters .sep { color: var(--text-3); font-size: 12px; }
-.filters input[type='date'] { width: auto; }
+.filters :deep(.dp--main) { width: 150px; }
 
 .search-note {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

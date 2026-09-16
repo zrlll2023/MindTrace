@@ -39,12 +39,12 @@
 
       <div v-if="manualKind === 'sleep'" class="row">
         <div class="field grow">
-          <label>睡眠时长（小时）</label>
-          <input v-model.number="manualHours" type="number" step="0.5" min="0" max="24" />
+          <label>睡眠时间段</label>
+          <TimeRangePicker v-model="manualSleepRange" />
         </div>
-        <div class="field grow">
-          <label>日期</label>
-          <input v-model="manualDate" type="date" />
+        <div v-if="sleepHours != null" class="field grow sleep-hours-hint">
+          <label>换算时长</label>
+          <div class="sleep-hours">{{ sleepHours }} 小时</div>
         </div>
       </div>
       <template v-else>
@@ -62,7 +62,7 @@
           </div>
           <div class="field grow">
             <label>日期</label>
-            <input v-model="manualDate" type="date" />
+            <DatePicker v-model="manualDate" open-above />
           </div>
         </div>
         <div class="knowledge-choice">
@@ -173,6 +173,8 @@ import { ref, computed, nextTick, watch, onMounted, reactive } from 'vue'
 import { useCaptureStore, ChatMessageItem } from '../stores/capture'
 import EntryCard from '../components/EntryCard.vue'
 import Icon from '../components/Icon.vue'
+import DatePicker from '../components/DatePicker.vue'
+import TimeRangePicker, { TimeRangeValue } from '../components/TimeRangePicker.vue'
 import { EntryKind } from '../../electron/types'
 import { KIND_PLAIN, kindClass } from '../utils/kinds'
 
@@ -189,7 +191,8 @@ function setKind(k: string): void {
   manualKind.value = k as EntryKind
 }
 const manualText = ref('')
-const manualHours = ref<number | null>(null)
+/** 睡眠时间段（起止精确到分钟）；null = 未选择 */
+const manualSleepRange = ref<TimeRangeValue | null>(null)
 const manualFrom = ref('')
 const manualNegative = ref(false)
 const manualDate = ref(new Date().toISOString().slice(0, 10))
@@ -201,6 +204,36 @@ const manualFolderId = ref(0)
 const manualNewFolder = ref(false)
 const manualNewFolderName = ref('')
 const manualKnowledgeReason = ref('')
+
+/** 由时间段换算睡眠时长（小时，保留 1 位小数）；无效/未选返回 null */
+const sleepHours = computed<number | null>(() => {
+  const r = manualSleepRange.value
+  if (!r?.start || !r.end) return null
+  const start = new Date(r.start.replace(' ', 'T'))
+  const end = new Date(r.end.replace(' ', 'T'))
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+  let diff = (end.getTime() - start.getTime()) / 3_600_000
+  // 跨夜睡眠：结束早于开始（如 23:00 → 07:00）按 +24h 处理
+  if (diff <= 0) diff += 24
+  return Math.round(diff * 10) / 10
+})
+
+/** 睡眠记录的原文描述，如「9月15日 23:00 至 9月16日 07:00，共 8.0 小时」 */
+const sleepRawText = computed(() => {
+  const r = manualSleepRange.value
+  if (!r?.start || !r.end) return ''
+  const hhmm = (s: string): string => s.slice(11, 16)
+  const day = (s: string): string => {
+    const [, m, d] = s.split('-')
+    return `${Number(m)}月${Number(d)}日`
+  }
+  const sameDay = r.start.slice(0, 10) === r.end.slice(0, 10)
+  const hours = sleepHours.value
+  const span = sameDay
+    ? `${day(r.start)} ${hhmm(r.start)} 至 ${hhmm(r.end)}`
+    : `${day(r.start)} ${hhmm(r.start)} 至 ${day(r.end)} ${hhmm(r.end)}`
+  return hours != null ? `${span}，共 ${hours.toFixed(1)} 小时` : span
+})
 
 const manualPlaceholder = computed(() => {
   const m: Partial<Record<EntryKind, string>> = {
@@ -214,7 +247,7 @@ const manualPlaceholder = computed(() => {
 })
 
 const manualReady = computed(() => {
-  if (manualKind.value === 'sleep') return manualHours.value != null && manualHours.value > 0 && manualHours.value <= 24
+  if (manualKind.value === 'sleep') return sleepHours.value != null && sleepHours.value > 0 && sleepHours.value <= 24
   return manualText.value.trim().length > 0
 })
 
@@ -224,25 +257,31 @@ async function saveManual(): Promise<void> {
   try {
     const content =
       manualKind.value === 'sleep'
-        ? { hours: manualHours.value }
+        ? { hours: sleepHours.value }
         : manualKind.value === 'quote'
           ? { text: manualText.value.trim(), ...(manualFrom.value.trim() ? { from: manualFrom.value.trim() } : {}) }
           : manualKind.value === 'event'
             ? { text: manualText.value.trim(), negative: manualNegative.value }
             : { text: manualText.value.trim() }
-    const rawText = manualKind.value === 'sleep' ? `睡了${manualHours.value}小时` : manualText.value.trim()
+    const rawText = manualKind.value === 'sleep' ? sleepRawText.value : manualText.value.trim()
     const knowledge = manualToKnowledge.value ? {
       addToKnowledge: true,
       folderId: manualNewFolder.value ? undefined : manualFolderId.value,
       newFolderName: manualNewFolder.value ? manualNewFolderName.value : undefined,
       reason: manualKnowledgeReason.value
     } : undefined
-    const r = await window.api.entries.manual(manualKind.value, content, rawText, manualDate.value || undefined, knowledge)
+    const r = await window.api.entries.manual(
+      manualKind.value,
+      content,
+      rawText,
+      (manualKind.value === 'sleep' ? manualSleepRange.value?.end.slice(0, 10) : manualDate.value) || undefined,
+      knowledge
+    )
     if (r.ok) {
       manualOk.value = true
       manualMsg.value = manualToKnowledge.value ? '已保存到时间线和知识库' : '已保存到时间线'
       manualText.value = ''
-      manualHours.value = null
+      manualSleepRange.value = null
       manualFrom.value = ''
       manualNegative.value = false
       manualToKnowledge.value = false
@@ -323,7 +362,7 @@ watch(mode, v => localStorage.setItem('mt-capture-mode', v))
 <style scoped>
 .capture-page {
   display: flex; flex-direction: column;
-  height: calc(100vh - 74px);
+  height: 100%;
 }
 
 .mode-switch { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -336,6 +375,17 @@ watch(mode, v => localStorage.setItem('mt-capture-mode', v))
   background: var(--kc-weak); border-color: var(--kc); color: var(--kc);
 }
 .grow { flex: 1; min-width: 140px; }
+.sleep-hours-hint { flex: 0 0 auto; min-width: 120px; }
+.sleep-hours {
+  padding: 8px 11px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r);
+  font-size: 13.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .manual .msg { margin: 0; }
 .knowledge-choice { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
 .knowledge-fields { margin-top: 9px; }
