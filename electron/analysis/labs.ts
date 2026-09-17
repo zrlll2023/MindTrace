@@ -1,4 +1,5 @@
-import { Repo } from '../db/repository'
+import { Entry, Repo } from '../db/repository'
+import { summarizeSleepDay } from './sleep'
 
 /**
  * v3 实验性功能（spec §9 v3，均标注“实验”）：
@@ -12,21 +13,25 @@ export interface DayMetrics {
   negative_count: number
   entry_count: number
   idea_count: number
+  sleep_sessions: number
+  longest_sleep_hours: number | null
+  sleep_data_mode: 'sessions' | 'daily_total' | 'duration_only' | 'none'
 }
 
 export async function dailyMetrics(repo: Repo, dateFrom: string, dateTo: string): Promise<DayMetrics[]> {
   const entries = await repo.listEntries({ dateFrom, dateTo, limit: 5000 })
-  const byDate = new Map<string, { sleep: number[]; neg: number; ideas: number; total: number }>()
+  const byDate = new Map<string, { entries: Entry[]; neg: number; ideas: number; total: number }>()
   // 先铺满日期区间（含无记录日）
   const start = new Date(dateFrom)
   const end = new Date(dateTo)
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const key = d.toISOString().slice(0, 10)
-    byDate.set(key, { sleep: [], neg: 0, ideas: 0, total: 0 })
+    byDate.set(key, { entries: [], neg: 0, ideas: 0, total: 0 })
   }
   for (const e of entries) {
     const day = byDate.get(e.entry_date)
     if (!day) continue
+    day.entries.push(e)
     day.total++
     let content: Record<string, unknown> = {}
     try {
@@ -34,17 +39,22 @@ export async function dailyMetrics(repo: Repo, dateFrom: string, dateTo: string)
     } catch {
       continue
     }
-    if (e.kind === 'sleep' && typeof content.hours === 'number') day.sleep.push(content.hours)
     if (e.kind === 'event' && content.negative === true) day.neg++
     if (e.kind === 'idea') day.ideas++
   }
-  return [...byDate.entries()].map(([date, d]) => ({
-    date,
-    sleep_hours: d.sleep.length ? d.sleep.reduce((a, b) => a + b, 0) / d.sleep.length : null,
-    negative_count: d.neg,
-    entry_count: d.total,
-    idea_count: d.ideas
-  }))
+  return [...byDate.entries()].map(([date, d]) => {
+    const sleep = summarizeSleepDay(d.entries)
+    return {
+      date,
+      sleep_hours: sleep.totalHours,
+      negative_count: d.neg,
+      entry_count: d.total,
+      idea_count: d.ideas,
+      sleep_sessions: sleep.sessionCount,
+      longest_sleep_hours: sleep.longestHours,
+      sleep_data_mode: sleep.dataMode
+    }
+  })
 }
 
 /** 引导式研究会话：AI 生成 3~5 个搜索词 + 推荐搜索引擎链接 */

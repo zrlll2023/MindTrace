@@ -53,7 +53,7 @@ export type ValidateResult<T> =
 
 /** content 键白名单（契约 §2） */
 const CONTENT_KEYS: Record<EntryKind, string[]> = {
-  sleep: ['hours'],
+  sleep: ['hours', 'recordType', 'startAt', 'endAt', 'date'],
   event: ['text', 'negative'],
   conversation: ['text', 'with', 'role', 'conversation'],
   quote: ['text', 'from'],
@@ -74,6 +74,15 @@ export function validateParsedEntry(raw: unknown): { ok: boolean; entry?: Valida
   }
 
   const src = e.content as Record<string, unknown>
+
+  if (kind === 'sleep') {
+    const normalized = normalizeSleepContent(src)
+    if (!normalized.ok) return normalized
+    let confidence = typeof e.confidence === 'number' && isFinite(e.confidence) ? e.confidence : 0.5
+    confidence = Math.min(1, Math.max(0, confidence))
+    return { ok: true, entry: { kind, content: normalized.content, confidence } }
+  }
+
   const allowed = CONTENT_KEYS[kind]
   const out: Record<string, unknown> = {}
   const dropped: string[] = []
@@ -104,13 +113,52 @@ export function validateParsedEntry(raw: unknown): { ok: boolean; entry?: Valida
   let confidence = typeof e.confidence === 'number' && isFinite(e.confidence) ? e.confidence : 0.5
   confidence = Math.min(1, Math.max(0, confidence))
 
-  // 除 sleep 外全部要求 text 字段（契约 §2）
-  if (kind !== 'sleep') {
-    if (typeof out.text !== 'string' || !out.text) return { ok: false, reason: 'empty-text' }
-  }
+  // sleep 已在上方提前返回，其余类型全部要求 text 字段（契约 §2）
+  if (typeof out.text !== 'string' || !out.text) return { ok: false, reason: 'empty-text' }
 
   if (dropped.length) out._dropped = dropped
   return { ok: true, entry: { kind, content: out, confidence } }
+}
+
+const LOCAL_DATE_TIME = /^\d{4}-\d{2}-\d{2} ([01]\d|2[0-3]):[0-5]\d$/
+
+function validLocalDateTime(value: unknown): value is string {
+  if (typeof value !== 'string' || !LOCAL_DATE_TIME.test(value)) return false
+  const [date, time] = value.split(' ')
+  return validateEntryMoment(date, time).ok
+}
+
+function roundedHours(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 24) return null
+  return Math.round(value * 10) / 10
+}
+
+/** Normalize every accepted sleep shape. Session duration is always server-derived. */
+export function normalizeSleepContent(src: Record<string, unknown>):
+  | { ok: true; content: Record<string, unknown> }
+  | { ok: false; reason: string } {
+  if (src.recordType === 'session') {
+    if (!validLocalDateTime(src.startAt) || !validLocalDateTime(src.endAt)) {
+      return { ok: false, reason: 'sleep-session-time-invalid' }
+    }
+    const start = new Date(src.startAt.replace(' ', 'T'))
+    const end = new Date(src.endAt.replace(' ', 'T'))
+    const hours = Math.round(((end.getTime() - start.getTime()) / 3_600_000) * 10) / 10
+    if (hours <= 0 || hours > 24) return { ok: false, reason: 'hours-out-of-range' }
+    return { ok: true, content: { recordType: 'session', startAt: src.startAt, endAt: src.endAt, hours } }
+  }
+
+  if (src.recordType === 'daily_total') {
+    const dateCheck = validateEntryMoment(src.date, undefined)
+    const hours = roundedHours(src.hours)
+    if (!dateCheck.ok) return { ok: false, reason: 'sleep-total-date-invalid' }
+    if (hours == null) return { ok: false, reason: 'hours-out-of-range' }
+    return { ok: true, content: { recordType: 'daily_total', date: src.date, hours } }
+  }
+
+  const hours = roundedHours(src.hours)
+  if (hours == null) return { ok: false, reason: 'hours-out-of-range' }
+  return { ok: true, content: { hours } }
 }
 
 export interface ValidatedThread {

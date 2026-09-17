@@ -35,7 +35,7 @@ confidence: number // 0~1
 
 | kind | 允许键 | 类型 |
 |---|---|---|
-| sleep | `hours` | number, 0~24 |
+| sleep | `hours`, `recordType?`, `startAt?`, `endAt?`, `date?` | 见下方睡眠规则 |
 | event | `text`, `negative?` | string ≤2000字, boolean |
 | conversation | `text`, `with?`, `role?`, `conversation?` | string ≤2000字 |
 | quote | `text`, `from?` | string ≤2000字 |
@@ -43,6 +43,9 @@ confidence: number // 0~1
 | other | `text` | string ≤2000字 |
 
 **硬性不变量：**
+- AI 解析的普通睡眠文本可以继续输出 `{ hours }`，这表示“仅知道时长、分段未知”，不得推断为连续睡眠
+- 手动睡眠段使用 `{ recordType:'session', startAt:'YYYY-MM-DD HH:mm', endAt:'YYYY-MM-DD HH:mm', hours }`，其中 `hours` 必须由后端按起止时间重算
+- 当天累计值使用 `{ recordType:'daily_total', date:'YYYY-MM-DD', hours }`；同一天不得与 `session` 或旧 `{ hours }` 混合统计
 - `raw_text` 永不被 AI 修改或删除（只有 content 可经 `timeline:updateContent` 修正）
 - 字符串值必须是纯文本——**禁止 Markdown/HTML 标签**（UI 用纯文本渲染 content），写入前 `sanitizeText()` 剥离
 - 禁止以 `_` 开头的业务键（保留给系统）

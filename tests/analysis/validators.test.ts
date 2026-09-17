@@ -48,6 +48,31 @@ describe('validateParsedEntry', () => {
     expect(validateParsedEntry({ kind: 'sleep', content: { hours: '很多' }, confidence: 1 }).ok).toBe(false)
   })
 
+  it('睡眠段时长以后端起止时间为准', () => {
+    const result = validateParsedEntry({
+      kind: 'sleep',
+      content: { recordType: 'session', startAt: '2026-09-16 23:00', endAt: '2026-09-17 07:00', hours: 3 },
+      confidence: 1
+    })
+    expect(result.ok).toBe(true)
+    expect(result.entry?.content).toEqual({
+      recordType: 'session',
+      startAt: '2026-09-16 23:00',
+      endAt: '2026-09-17 07:00',
+      hours: 8
+    })
+  })
+
+  it('当天累计睡眠保留分段未知语义', () => {
+    const result = validateParsedEntry({
+      kind: 'sleep',
+      content: { recordType: 'daily_total', date: '2026-09-17', hours: 8 },
+      confidence: 1
+    })
+    expect(result.ok).toBe(true)
+    expect(result.entry?.content).toEqual({ recordType: 'daily_total', date: '2026-09-17', hours: 8 })
+  })
+
   it('未知键丢弃并记录 _dropped；_ 开头键拒绝', () => {
     const r = validateParsedEntry({ kind: 'idea', content: { text: 'x', hacker: 1, _meta: 'no' }, confidence: 1 })
     expect(r.ok).toBe(true)

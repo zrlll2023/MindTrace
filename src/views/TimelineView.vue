@@ -48,24 +48,35 @@
         <div class="day-aside">
           <span class="day-node" />
           <div class="day-date">{{ formatDay(group.date) }}</div>
-          <div class="day-meta">{{ weekday(group.date) }} · {{ group.items.length }} 条</div>
+          <div class="day-meta">{{ weekday(group.date) }} · {{ group.recordCount }} 条</div>
         </div>
         <div class="day-main">
           <article
-            v-for="e in group.items"
-            :key="e.id"
+            v-for="item in group.items"
+            :key="item.key"
             class="entry"
-            @click="openDetail(e)"
+            :class="{ 'sleep-overview': item.type === 'sleep-day' }"
+            @click="item.type === 'sleep-day' ? openSleepDay(item) : openDetail(item.entry)"
           >
-            <span class="t">{{ e.entry_time || '未标时间' }}</span>
-            <span class="kind-badge" :class="kindClass(e.kind)">
-              <span class="kind-dot" />{{ kindLabel(e.kind) }}
+            <span class="t">{{ item.type === 'sleep-day' ? '全天' : item.entry.entry_time || '未标时间' }}</span>
+            <span class="kind-badge" :class="kindClass(item.type === 'sleep-day' ? 'sleep' : item.entry.kind)">
+              <span class="kind-dot" />{{ kindLabel(item.type === 'sleep-day' ? 'sleep' : item.entry.kind) }}
             </span>
-            <span class="summary">{{ summarize(e) }}</span>
-            <span v-if="semanticOn && e._score != null" class="score">
-              {{ e._rerank != null ? `精排 ${Math.round(e._rerank * 100)}%` : `${Math.round(e._score * 100)}%` }}
+            <span v-if="item.type === 'sleep-day'" class="summary">
+              总计 {{ item.totalHours.toFixed(1) }} 小时
+              <template v-if="item.sessionCount"> · {{ item.sessionCount }} 段<span v-if="item.longestHours"> · 最长连续 {{ item.longestHours.toFixed(1) }} 小时</span></template>
+              <template v-else> · 分段未知</template>
             </span>
-            <div v-if="semanticOn && e._chunk" class="chunk-hit">匹配片段：{{ e._chunk }}</div>
+            <span v-else class="summary">{{ summarize(item.entry) }}</span>
+            <span v-if="item.type === 'entry' && semanticOn && item.entry._score != null" class="score">
+              {{ item.entry._rerank != null ? `精排 ${Math.round(item.entry._rerank * 100)}%` : `${Math.round(item.entry._score * 100)}%` }}
+            </span>
+            <div v-if="item.type === 'entry' && semanticOn && item.entry._chunk" class="chunk-hit">匹配片段：{{ item.entry._chunk }}</div>
+            <div v-if="item.type === 'sleep-day'" class="sleep-segments">
+              <span v-for="segment in item.segments" :key="segment.entry.id">
+                {{ sleepEntryLabel(segment.entry) }} · {{ segment.sleep.hours.toFixed(1) }} 小时
+              </span>
+            </div>
           </article>
         </div>
       </section>
@@ -81,7 +92,29 @@
       <p>去「记录」页写下第一条吧，之后它会按日期出现在这里。</p>
     </div>
 
-    <!-- 详情侧栏 -->
+    <div v-if="sleepDayDetail" class="drawer-mask" @click.self="sleepDayDetail = null">
+      <div class="drawer side">
+        <div class="drawer-head">
+          <span class="kind-badge" :class="kindClass('sleep')"><span class="kind-dot" />睡眠</span>
+          <span class="meta">{{ sleepDayDetail.date }} · 总计 {{ sleepDayDetail.totalHours.toFixed(1) }} 小时</span>
+          <button class="close" title="关闭" @click="sleepDayDetail = null"><Icon name="close" :size="16" /></button>
+        </div>
+        <div class="sleep-day-stats">
+          <div><b>{{ sleepDayDetail.totalHours.toFixed(1) }}h</b><span>睡眠总计</span></div>
+          <div><b>{{ sleepDayDetail.sessionCount || '—' }}</b><span>睡眠段数</span></div>
+          <div><b>{{ sleepDayDetail.longestHours ? `${sleepDayDetail.longestHours.toFixed(1)}h` : '—' }}</b><span>最长连续</span></div>
+        </div>
+        <div class="sleep-detail-list">
+          <div v-for="segment in sleepDayDetail.segments" :key="segment.entry.id" class="sleep-detail-row">
+            <div><b>{{ sleepEntryLabel(segment.entry) }}</b><span>{{ segment.sleep.hours.toFixed(1) }} 小时<span v-if="segment.sleep.mode !== 'session'"> · 分段未知</span></span></div>
+            <button class="secondary small" @click="editSleepSegment(segment.entry)">更正</button>
+          </div>
+        </div>
+        <button class="secondary" @click="addSleepSegment">去记录页新增睡眠</button>
+      </div>
+    </div>
+
+    <!-- 单条记录详情侧栏 -->
     <div v-if="detail" class="drawer-mask" @click.self="detail = null">
       <div class="drawer side">
         <div class="drawer-head">
@@ -99,20 +132,40 @@
         </div>
 
         <div class="field">
-          <div class="section-label">原始记录（不可修改）</div>
-          <p class="raw">{{ detail.raw_text }}</p>
+          <div class="section-label">录入快照（只读）</div>
+          <p class="raw">{{ readableSleepSnapshot(detail.raw_text, detail.entry_date, detail.content) }}</p>
         </div>
 
         <div class="field">
-          <div class="section-label">结构化内容（可修正）</div>
-          <textarea v-model="detailContentText" rows="8" class="mono" />
+          <div class="section-label">更正记录</div>
+          <template v-if="detail.kind === 'sleep' && detailForm.recordType === 'session'">
+            <label>睡眠时间段</label>
+            <TimeRangePicker v-model="detailSleepRange" />
+            <p class="hint">保存后，时间线、生活趋势和后续 AI 分析都会重新计算。</p>
+          </template>
+          <template v-else-if="detail.kind === 'sleep' && detailForm.recordType === 'daily_total'">
+            <label>日期</label><DatePicker v-model="detailForm.date" />
+            <label>当天累计睡眠（小时）</label><input v-model.number="detailForm.hours" type="number" min="0.1" max="24" step="0.1" />
+            <p class="hint">这是累计值，系统不会据此推断连续睡眠时长。</p>
+          </template>
+          <template v-else-if="detail.kind === 'sleep'">
+            <label>睡眠时长（小时）</label><input v-model.number="detailForm.hours" type="number" min="0.1" max="24" step="0.1" />
+            <p class="hint">旧记录没有起止时间，只能更正总时长，连续性仍标记为未知。</p>
+          </template>
+          <template v-else>
+            <label>内容</label><textarea v-model="detailForm.text" rows="5" />
+            <label v-if="detail.kind === 'quote'">出处</label><input v-if="detail.kind === 'quote'" v-model="detailForm.from" />
+            <label v-if="detail.kind === 'event'" class="checkbox"><input v-model="detailForm.negative" type="checkbox" />负面事件</label>
+            <label v-if="detail.kind === 'conversation'">参与者</label><input v-if="detail.kind === 'conversation'" v-model="detailForm.with" />
+          </template>
         </div>
 
         <div class="row">
           <button v-if="detailKnowledgeId" class="secondary" @click="openKnowledge">查看知识资料</button>
           <button class="primary" @click="saveContent">保存修改</button>
           <button class="danger" @click="removeEntry">删除这条记录</button>
-          <span v-if="saved" class="msg ok inline">已保存 ✓</span>
+          <span v-if="saved" class="msg ok inline">已保存</span>
+          <span v-if="saveError" class="msg err inline">{{ saveError }}</span>
         </div>
       </div>
     </div>
@@ -120,13 +173,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, reactive, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { EntryKind, TimelineFilter } from '../../electron/types'
 import Icon from '../components/Icon.vue'
 import DatePicker from '../components/DatePicker.vue'
+import TimeRangePicker, { TimeRangeValue } from '../components/TimeRangePicker.vue'
 import { KIND_PLAIN, kindClass, kindLabel } from '../utils/kinds'
 import { localDateString } from '../utils/datetime'
+import { parseSleepContent, readableSleepSnapshot, sessionLabel, shortDate, SleepDisplay } from '../utils/sleep'
 
 interface EntryRow {
   id: number
@@ -142,6 +197,20 @@ interface EntryRow {
   _chunk?: string
 }
 
+interface SleepSegment { entry: EntryRow; sleep: SleepDisplay }
+interface SleepDayItem {
+  type: 'sleep-day'
+  key: string
+  date: string
+  segments: SleepSegment[]
+  totalHours: number
+  sessionCount: number
+  longestHours: number | null
+  sortTime: string
+}
+interface EntryItem { type: 'entry'; key: string; entry: EntryRow; sortTime: string }
+type TimelineItem = SleepDayItem | EntryItem
+
 const entries = ref<EntryRow[]>([])
 const kind = ref<EntryKind | null>(null)
 const dateFrom = ref('')
@@ -155,8 +224,10 @@ const PAGE = 50
 const offset = ref(0)
 const hasMore = ref(false)
 const detail = ref<EntryRow | null>(null)
-const detailContentText = ref('')
+const detailForm = reactive<Record<string, any>>({})
+const sleepDayDetail = ref<SleepDayItem | null>(null)
 const saved = ref(false)
+const saveError = ref('')
 const router = useRouter()
 const detailKnowledgeId = computed(() => {
   try { return Number(JSON.parse(detail.value?.content ?? '{}').kbItemId) || 0 } catch { return 0 }
@@ -194,16 +265,43 @@ const groups = computed(() => {
   }
   return [...map.entries()]
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .map(([date, items]) => ({
-      date,
-      items: items.sort((a, b) => {
-        if (a.entry_time && b.entry_time) return b.entry_time.localeCompare(a.entry_time)
-        if (a.entry_time) return -1
-        if (b.entry_time) return 1
-        return b.created_at.localeCompare(a.created_at) || b.id - a.id
-      })
-    }))
+    .map(([date, records]) => {
+      const items: TimelineItem[] = records
+        .filter(entry => entry.kind !== 'sleep')
+        .map(entry => ({ type: 'entry', key: `entry-${entry.id}`, entry, sortTime: entry.entry_time ?? '' }))
+      const segments = records
+        .filter(entry => entry.kind === 'sleep')
+        .map(entry => ({ entry, sleep: parseSleepContent(entry.content) }))
+        .filter((value): value is SleepSegment => value.sleep !== null)
+      if (segments.length) items.push(makeSleepDay(date, segments))
+      items.sort((a, b) => b.sortTime.localeCompare(a.sortTime) || b.key.localeCompare(a.key))
+      return { date, items, recordCount: records.length }
+    })
 })
+
+function makeSleepDay(date: string, segments: SleepSegment[]): SleepDayItem {
+  const dailyTotal = segments.find(segment => segment.sleep.mode === 'daily_total')
+  const totalHours = dailyTotal?.sleep.hours ?? segments.reduce((sum, segment) => sum + segment.sleep.hours, 0)
+  const sessions = segments.filter(segment => segment.sleep.mode === 'session')
+  return {
+    type: 'sleep-day',
+    key: `sleep-${date}`,
+    date,
+    segments,
+    totalHours: Math.round(totalHours * 10) / 10,
+    sessionCount: sessions.length,
+    longestHours: sessions.length ? Math.max(...sessions.map(segment => segment.sleep.hours)) : null,
+    sortTime: segments.map(segment => segment.entry.entry_time ?? '').sort().at(-1) ?? ''
+  }
+}
+
+function sleepEntryLabel(entry: EntryRow): string {
+  const sleep = parseSleepContent(entry.content)
+  if (!sleep) return '睡眠记录'
+  if (sleep.mode === 'session') return sessionLabel(sleep.startAt, sleep.endAt)
+  if (sleep.mode === 'daily_total') return `${shortDate(sleep.date)} 当天累计`
+  return '仅记录时长'
+}
 
 function summarize(e: EntryRow): string {
   try {
@@ -284,20 +382,43 @@ function onSearch(): void {
 
 function openDetail(e: EntryRow): void {
   detail.value = e
-  detailContentText.value = JSON.stringify(JSON.parse(e.content), null, 2)
+  for (const key of Object.keys(detailForm)) delete detailForm[key]
+  Object.assign(detailForm, JSON.parse(e.content) as Record<string, unknown>)
   saved.value = false
+  saveError.value = ''
 }
+
+function openSleepDay(item: SleepDayItem): void { sleepDayDetail.value = item }
+function editSleepSegment(entry: EntryRow): void { sleepDayDetail.value = null; openDetail(entry) }
+function addSleepSegment(): void { void router.push({ path: '/capture', query: { kind: 'sleep' } }) }
+
+const detailSleepRange = computed<TimeRangeValue | null>({
+  get: () => detailForm.recordType === 'session' && detailForm.startAt && detailForm.endAt
+    ? { start: String(detailForm.startAt), end: String(detailForm.endAt) }
+    : null,
+  set: value => {
+    detailForm.startAt = value?.start ?? ''
+    detailForm.endAt = value?.end ?? ''
+  }
+})
 
 async function saveContent(): Promise<void> {
   if (!detail.value) return
+  saveError.value = ''
   try {
-    const obj = JSON.parse(detailContentText.value)
-    await window.api.timeline.updateContent(detail.value.id, obj)
-    detail.value.content = JSON.stringify(obj)
+    const result = await window.api.timeline.updateContent(detail.value.id, { ...detailForm })
+    if (!result.ok) {
+      saveError.value = result.error ?? '保存失败'
+      return
+    }
+    detail.value.content = JSON.stringify(result.content)
+    detail.value.entry_date = result.entryDate
+    detail.value.entry_time = result.entryTime
     saved.value = true
+    await load()
     setTimeout(() => (saved.value = false), 2000)
-  } catch {
-    alert('JSON 格式有误，请检查后再保存')
+  } catch (error) {
+    saveError.value = (error as Error).message || '保存失败'
   }
 }
 
@@ -388,6 +509,12 @@ onMounted(() => void load())
   padding: 4px 9px; margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.sleep-overview { align-items: start; }
+.sleep-segments {
+  grid-column: 3 / -1;
+  display: grid; gap: 3px;
+  font-size: 11.5px; color: var(--text-3);
+}
 
 .tl-foot { display: flex; justify-content: center; padding: 12px 0 4px; }
 .end-note { font-size: 11.5px; color: var(--text-3); letter-spacing: 0.08em; }
@@ -399,6 +526,16 @@ onMounted(() => void load())
   padding: 10px 12px; font-size: 13px; color: var(--text-2); margin: 0;
 }
 textarea.mono { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
+.sleep-day-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.sleep-day-stats div { display: flex; flex-direction: column; padding: 12px; background: var(--surface-2); border-radius: var(--r); }
+.sleep-day-stats b { font-size: 20px; }
+.sleep-day-stats span { font-size: 11px; color: var(--text-3); }
+.sleep-detail-list { display: grid; gap: 8px; margin-bottom: 14px; }
+.sleep-detail-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r); }
+.sleep-detail-row > div { display: grid; gap: 3px; min-width: 0; }
+.sleep-detail-row b { font-size: 13px; font-weight: 600; }
+.sleep-detail-row span { font-size: 11.5px; color: var(--text-3); }
+.drawer .field > label:not(.checkbox) { display: block; margin: 10px 0 5px; }
 
 @media (max-width: 760px) {
   .tl::before { display: none; }
@@ -407,5 +544,7 @@ textarea.mono { font-family: var(--font-mono); font-size: 12px; line-height: 1.6
   .day-node { display: none; }
   .day-date { display: inline-block; }
   .day-meta { display: inline-block; margin-left: 8px; }
+  .sleep-segments { grid-column: 1 / -1; }
+  .sleep-day-stats { grid-template-columns: 1fr; }
 }
 </style>

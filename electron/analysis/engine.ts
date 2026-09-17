@@ -4,6 +4,7 @@ import { AnalysisTools } from './tools'
 import { SearchAdapter } from '../adapters/search'
 import { desensitizeText } from './desensitize'
 import { Report } from '../db/repository'
+import { sleepContext } from './sleep'
 
 const MAX_TOOL_CALLS = 6
 
@@ -48,7 +49,7 @@ const TOOL_SPECS: ToolSpec[] = [
     function: {
       name: 'correlate',
       description:
-        '计算两个按日聚合指标的相关系数（至少需要 3 天数据）。指标支持 sleep.hours（当日平均睡眠）与 event.negative_count（当日负面事件数）。',
+        '计算两个按日聚合指标的相关系数（至少需要 3 天数据）。指标支持 sleep.hours（当天睡眠总时长）与 event.negative_count（当日负面事件数）。',
       parameters: {
         type: 'object',
         properties: {
@@ -104,6 +105,7 @@ const SYSTEM_PROMPT = `你是 MindTrace 的个人成长分析师。用户会给�
 3. 若用户配置了联网搜索（web_search 可用），为核心兴趣线搜索 1~2 次延伸内容，在「推荐内容」小节列出 2~3 条带链接的可读材料（标题+一句话理由）。搜索不计入 6 次上限，但请克制。
 4. 报告须包含这些小节：## 今天概况 / ## 规律与洞察 / ## 兴趣线推进（如有）/ ## 推荐内容（如有搜索结果）/ ## 明日建议
 5. 若兴趣线有推进，在「兴趣线推进」小节说明这条线是什么、今天的记录如何推进了它。
+6. 睡眠分析必须区分“分段记录”和“当天累计值”。只有分段记录才能评价连续性；分段未知时不得把累计时长描述成连续睡眠。
 
 最终输出：一个 JSON 对象（不要 markdown 代码块），形如：
 {
@@ -166,12 +168,13 @@ export class AnalyzeEngine {
       created_at: e.created_at,
       content: this.maskJson(JSON.parse(e.content))
     }))
+    const sleep = sleepContext(date, dayEntries)
 
     const messages: ChatMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       {
         role: 'user',
-        content: `日期：${date}\n当日记录（JSON）：\n${JSON.stringify(digest, null, 2)}`
+        content: `日期：${date}${sleep ? `\n\n睡眠摘要：\n${sleep}` : ''}\n\n当日记录（JSON）：\n${JSON.stringify(digest, null, 2)}`
       }
     ]
 

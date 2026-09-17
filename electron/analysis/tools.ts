@@ -1,4 +1,5 @@
 import { Repo, Entry } from '../db/repository'
+import { summarizeSleepDay } from './sleep'
 
 /**
  * 有界 Agent 的本地工具集（spec §6.2）。
@@ -67,7 +68,7 @@ export class AnalysisTools {
 
   /**
    * 按日聚合两个指标并计算皮尔逊相关系数。
-   * 支持 metric 形如 "sleep.hours"（当日 sleep 条目 content.hours 的均值）
+   * 支持 metric 形如 "sleep.hours"（当天睡眠总时长）
    * 与 "event.negative_count"（当日 negative=true 的事件条数）。
    */
   async correlate(args: {
@@ -89,6 +90,7 @@ export class AnalysisTools {
     }
 
     const agg = (dayEntries: Entry[], metric: string): number | null => {
+      if (metric === 'sleep.hours') return summarizeSleepDay(dayEntries).totalHours
       if (metric === 'event.negative_count') {
         return dayEntries.filter(
           e => e.kind === 'event' && (JSON.parse(e.content) as { negative?: boolean }).negative === true

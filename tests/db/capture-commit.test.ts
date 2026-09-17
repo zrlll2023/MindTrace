@@ -69,4 +69,17 @@ describe('AI 快速记录归档事务', () => {
     })])).rejects.toThrow('非睡眠内容不能改为睡眠')
     expect(await repo.listEntries({})).toHaveLength(0)
   })
+
+  it('AI 睡眠不会与当天已有睡眠重复累计', async () => {
+    const { repo, messageId } = await fixture()
+    await repo.insertEntry({
+      raw_text: '已有睡眠段', kind: 'sleep',
+      content: JSON.stringify({ recordType: 'session', startAt: '2026-09-14 23:00', endAt: '2026-09-15 07:00', hours: 8 }),
+      confidence: 1, source: 'manual', entry_date: '2026-09-15'
+    })
+    await expect(commitCaptureEntries(repo, messageId, [choice({
+      kind: 'sleep', content: { hours: 8 }, originalKind: 'sleep'
+    })])).rejects.toThrow('当天已有睡眠记录')
+    expect(await repo.listEntries({ kind: 'sleep' })).toHaveLength(1)
+  })
 })

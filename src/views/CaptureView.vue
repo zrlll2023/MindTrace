@@ -37,14 +37,31 @@
         </div>
       </div>
 
-      <div v-if="manualKind === 'sleep'" class="row">
-        <div class="field grow">
-          <label>睡眠时间段</label>
-          <TimeRangePicker v-model="manualSleepRange" />
+      <div v-if="manualKind === 'sleep'" class="sleep-editor">
+        <div class="seg-group sleep-mode">
+          <button :class="sleepInputMode === 'session' ? 'seg on' : 'seg'" type="button" @click="sleepInputMode = 'session'">记录睡眠时段</button>
+          <button :class="sleepInputMode === 'daily_total' ? 'seg on' : 'seg'" type="button" @click="sleepInputMode = 'daily_total'">填写当天总睡眠</button>
         </div>
-        <div v-if="sleepHours != null" class="field grow sleep-hours-hint">
-          <label>换算时长</label>
-          <div class="sleep-hours">{{ sleepHours }} 小时</div>
+        <div v-if="sleepInputMode === 'session'" class="row">
+          <div class="field grow">
+            <label>睡眠时间段</label>
+            <TimeRangePicker v-model="manualSleepRange" />
+          </div>
+          <div v-if="sleepHours != null" class="field grow sleep-hours-hint">
+            <label>换算时长</label>
+            <div class="sleep-hours">{{ sleepHours }} 小时</div>
+          </div>
+        </div>
+        <div v-else class="row">
+          <div class="field grow">
+            <label>日期</label>
+            <DatePicker v-model="manualTotalDate" open-above />
+          </div>
+          <div class="field grow">
+            <label>当天累计睡眠（小时）</label>
+            <input v-model.number="manualTotalHours" type="number" min="0.1" max="24" step="0.1" />
+          </div>
+          <p class="hint sleep-total-note">仅记录当天总时长，AI 无法判断睡眠是否连续。</p>
         </div>
       </div>
       <template v-else>
@@ -168,6 +185,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, reactive } from 'vue'
+import { useRoute } from 'vue-router'
 import { useCaptureStore, ChatMessageItem, isCaptureEntryValid } from '../stores/capture'
 import EntryCard from '../components/EntryCard.vue'
 import Icon from '../components/Icon.vue'
@@ -178,6 +196,7 @@ import { KIND_PLAIN, kindClass } from '../utils/kinds'
 import { localDateString } from '../utils/datetime'
 
 const store = useCaptureStore()
+const route = useRoute()
 const listEl = ref<HTMLElement>()
 
 const mode = ref<'manual' | 'ai'>('manual')
@@ -190,8 +209,11 @@ function setKind(k: string): void {
   manualKind.value = k as EntryKind
 }
 const manualText = ref('')
+const sleepInputMode = ref<'session' | 'daily_total'>('session')
 /** 睡眠时间段（起止精确到分钟）；null = 未选择 */
 const manualSleepRange = ref<TimeRangeValue | null>(null)
+const manualTotalDate = ref(localDateString())
+const manualTotalHours = ref<number | null>(null)
 const manualFrom = ref('')
 const manualNegative = ref(false)
 const manualDate = ref(localDateString())
@@ -212,8 +234,7 @@ const sleepHours = computed<number | null>(() => {
   const end = new Date(r.end.replace(' ', 'T'))
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
   let diff = (end.getTime() - start.getTime()) / 3_600_000
-  // 跨夜睡眠：结束早于开始（如 23:00 → 07:00）按 +24h 处理
-  if (diff <= 0) diff += 24
+  if (diff <= 0 || diff > 24) return null
   return Math.round(diff * 10) / 10
 })
 
@@ -223,7 +244,7 @@ const sleepRawText = computed(() => {
   if (!r?.start || !r.end) return ''
   const hhmm = (s: string): string => s.slice(11, 16)
   const day = (s: string): string => {
-    const [, m, d] = s.split('-')
+    const [, m, d] = s.slice(0, 10).split('-')
     return `${Number(m)}月${Number(d)}日`
   }
   const sameDay = r.start.slice(0, 10) === r.end.slice(0, 10)
@@ -246,7 +267,11 @@ const manualPlaceholder = computed(() => {
 })
 
 const manualReady = computed(() => {
-  if (manualKind.value === 'sleep') return sleepHours.value != null && sleepHours.value > 0 && sleepHours.value <= 24
+  if (manualKind.value === 'sleep') {
+    return sleepInputMode.value === 'session'
+      ? sleepHours.value != null
+      : !!manualTotalDate.value && manualTotalHours.value != null && manualTotalHours.value > 0 && manualTotalHours.value <= 24
+  }
   return manualText.value.trim().length > 0
 })
 
@@ -256,13 +281,19 @@ async function saveManual(): Promise<void> {
   try {
     const content =
       manualKind.value === 'sleep'
-        ? { hours: sleepHours.value }
+        ? sleepInputMode.value === 'session'
+          ? { recordType: 'session', startAt: manualSleepRange.value?.start, endAt: manualSleepRange.value?.end, hours: sleepHours.value }
+          : { recordType: 'daily_total', date: manualTotalDate.value, hours: manualTotalHours.value }
         : manualKind.value === 'quote'
           ? { text: manualText.value.trim(), ...(manualFrom.value.trim() ? { from: manualFrom.value.trim() } : {}) }
           : manualKind.value === 'event'
             ? { text: manualText.value.trim(), negative: manualNegative.value }
             : { text: manualText.value.trim() }
-    const rawText = manualKind.value === 'sleep' ? sleepRawText.value : manualText.value.trim()
+    const rawText = manualKind.value === 'sleep'
+      ? sleepInputMode.value === 'session'
+        ? sleepRawText.value
+        : `${manualTotalDate.value} 当天累计睡眠 ${Number(manualTotalHours.value).toFixed(1)} 小时`
+      : manualText.value.trim()
     const knowledge = manualToKnowledge.value ? {
       addToKnowledge: true,
       folderId: manualNewFolder.value ? undefined : manualFolderId.value,
@@ -273,7 +304,9 @@ async function saveManual(): Promise<void> {
       manualKind.value,
       content,
       rawText,
-      (manualKind.value === 'sleep' ? manualSleepRange.value?.end.slice(0, 10) : manualDate.value) || undefined,
+      (manualKind.value === 'sleep'
+        ? sleepInputMode.value === 'session' ? manualSleepRange.value?.end.slice(0, 10) : manualTotalDate.value
+        : manualDate.value) || undefined,
       knowledge
     )
     if (r.ok) {
@@ -281,6 +314,7 @@ async function saveManual(): Promise<void> {
       manualMsg.value = manualToKnowledge.value ? '已保存到时间线和知识库' : '已保存到时间线'
       manualText.value = ''
       manualSleepRange.value = null
+      manualTotalHours.value = null
       manualFrom.value = ''
       manualNegative.value = false
       manualToKnowledge.value = false
@@ -356,6 +390,10 @@ watch(
 onMounted(async () => {
   const s = localStorage.getItem('mt-capture-mode')
   if (s === 'ai' || s === 'manual') mode.value = s
+  if (route.query.kind === 'sleep') {
+    mode.value = 'manual'
+    manualKind.value = 'sleep'
+  }
   await store.load()
   await loadFolders()
 })
@@ -379,6 +417,9 @@ watch(mode, v => localStorage.setItem('mt-capture-mode', v))
 }
 .grow { flex: 1; min-width: 140px; }
 .sleep-hours-hint { flex: 0 0 auto; min-width: 120px; }
+.sleep-editor { display: grid; gap: 12px; }
+.sleep-mode { width: fit-content; }
+.sleep-total-note { flex: 1 1 100%; margin: -2px 0 0; }
 .sleep-hours {
   padding: 8px 11px;
   border: 1px dashed var(--border-strong);

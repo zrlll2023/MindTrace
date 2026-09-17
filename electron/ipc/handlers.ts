@@ -12,6 +12,35 @@ import { inspectMigration, migrateData, previousDataDir } from '../store/data-lo
 import { CaptureChoice, commitCaptureEntries } from '../capture-commit'
 
 interface KnowledgeChoice { addToKnowledge?: boolean; folderId?: number; newFolderName?: string; reason?: string }
+type SleepMode = 'session' | 'daily_total' | 'legacy'
+
+function sleepMode(content: Record<string, unknown>): SleepMode {
+  return content.recordType === 'session' ? 'session' : content.recordType === 'daily_total' ? 'daily_total' : 'legacy'
+}
+
+async function sleepModeConflict(date: string, mode: SleepMode, excludeId?: number): Promise<string | null> {
+  if (mode === 'legacy') return null
+  const entries = await getContext().repo.listEntries({ dateFrom: date, dateTo: date, kind: 'sleep', limit: 5000 })
+  const modes = entries
+    .filter(entry => entry.id !== excludeId)
+    .map(entry => {
+      try { return sleepMode(JSON.parse(entry.content) as Record<string, unknown>) } catch { return 'legacy' as const }
+    })
+  if (modes.some(value => value === 'legacy')) {
+    return '当天已有旧版睡眠时长记录，请先在时间线中删除该旧记录，再添加分段或累计睡眠'
+  }
+  if (mode === 'daily_total' && modes.some(value => value === 'session')) {
+    return '当天已有分段睡眠记录，请使用分段统计，或先删除这些睡眠段'
+  }
+  if (mode === 'session' && modes.some(value => value === 'daily_total')) {
+    return '当天已有累计睡眠记录，请先删除累计值，再添加具体睡眠段'
+  }
+  if (mode === 'daily_total' && modes.some(value => value === 'daily_total')) {
+    return '当天已有累计睡眠记录，请直接修改已有记录'
+  }
+  return null
+}
+
 function knowledgeText(kind: string, content: Record<string, unknown>, raw: string): string {
   if (typeof content.text === 'string') return content.text
   return raw || JSON.stringify(content, null, 2)
@@ -191,11 +220,27 @@ export function registerIpcHandlers(): void {
     getContext().repo.searchEntries(keyword)
   )
   ipcMain.handle('timeline:get', (_e, id: number) => getContext().repo.getEntry(id))
-  ipcMain.handle('timeline:updateContent', (_e, id: number, content: object) => {
+  ipcMain.handle('timeline:updateContent', async (_e, id: number, content: object) => {
     const c = getContext()
-    c.repo.updateEntryContent(id, JSON.stringify(content))
-    c.repo.save()
-    return { ok: true }
+    const existing = await c.repo.getEntry(id)
+    if (!existing) return { ok: false, error: '记录不存在' }
+    const { validateParsedEntry } = await import('../analysis/validators.js')
+    const validated = validateParsedEntry({ kind: existing.kind, content, confidence: existing.confidence })
+    if (!validated.ok || !validated.entry) return { ok: false, error: validated.reason ?? '内容校验未通过' }
+    const normalized = validated.entry.content
+    let entryDate: string | undefined
+    let entryTime: string | null | undefined
+    if (existing.kind === 'sleep') {
+      const mode = sleepMode(normalized)
+      entryDate = mode === 'session'
+        ? String(normalized.endAt).slice(0, 10)
+        : mode === 'daily_total' ? String(normalized.date) : existing.entry_date
+      entryTime = mode === 'session' ? String(normalized.endAt).slice(11, 16) : null
+      const conflict = await sleepModeConflict(entryDate, mode, id)
+      if (conflict) return { ok: false, error: conflict }
+    }
+    await c.repo.updateEntryContent(id, JSON.stringify(normalized), entryDate, entryTime)
+    return { ok: true, content: normalized, entryDate: entryDate ?? existing.entry_date, entryTime: entryTime ?? existing.entry_time }
   })
   ipcMain.handle('timeline:delete', (_e, id: number) => {
     getContext().repo.deleteEntry(id)
@@ -212,14 +257,28 @@ export function registerIpcHandlers(): void {
       }
       const v = validateParsedEntry({ kind, content, confidence: 1 })
       if (!v.ok || !v.entry) return { ok: false, error: v.reason ?? '内容校验未通过' }
+      const normalizedContent = v.entry.content
+      const normalizedDate = kind === 'sleep' && normalizedContent.recordType === 'session'
+        ? String(normalizedContent.endAt).slice(0, 10)
+        : kind === 'sleep' && normalizedContent.recordType === 'daily_total'
+          ? String(normalizedContent.date)
+          : entryDate
+      const normalizedTime = kind === 'sleep' && normalizedContent.recordType === 'session'
+        ? String(normalizedContent.endAt).slice(11, 16)
+        : undefined
+      if (kind === 'sleep' && normalizedDate) {
+        const conflict = await sleepModeConflict(normalizedDate, sleepMode(normalizedContent))
+        if (conflict) return { ok: false, error: conflict }
+      }
       db.run('BEGIN')
       const entry = await c.repo.insertEntry({
         raw_text: rawText || JSON.stringify(content),
         kind: v.entry.kind,
-        content: JSON.stringify(v.entry.content),
+        content: JSON.stringify(normalizedContent),
         confidence: 1,
         source: 'manual',
-        ...(entryDate ? { entry_date: entryDate } : {})
+        ...(normalizedDate ? { entry_date: normalizedDate } : {}),
+        ...(normalizedTime ? { entry_time: normalizedTime } : {})
       })
       if (kind !== 'sleep' && knowledge?.addToKnowledge) {
         const kb = new KnowledgeBase(db)

@@ -5,6 +5,29 @@
 export type EntryKind = 'sleep' | 'event' | 'conversation' | 'quote' | 'idea' | 'other'
 export type ReportType = 'daily' | 'weekly'
 
+export interface SleepSessionContent {
+  recordType: 'session'
+  /** Local date and time, formatted as YYYY-MM-DD HH:mm. */
+  startAt: string
+  /** Local date and time, formatted as YYYY-MM-DD HH:mm. */
+  endAt: string
+  /** Derived from startAt/endAt and rounded to one decimal place. */
+  hours: number
+}
+
+export interface SleepDailyTotalContent {
+  recordType: 'daily_total'
+  date: string
+  hours: number
+}
+
+/** Older and AI-parsed sleep entries may only contain a duration. */
+export interface SleepLegacyContent {
+  hours: number
+}
+
+export type SleepContent = SleepSessionContent | SleepDailyTotalContent | SleepLegacyContent
+
 export interface ProviderPreset {
   id: string
   name: string

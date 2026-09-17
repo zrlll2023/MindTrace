@@ -225,9 +225,13 @@ export class Repo {
     return this.valuesToEntry(res[0].columns, res[0].values[0])
   }
 
-  /** 仅更新 content；raw_text 永不修改（spec §4.1） */
-  async updateEntryContent(id: number, content: string): Promise<void> {
-    this.db.run('UPDATE entries SET content = ? WHERE id = ?', [content, id])
+  /** Update corrected structured data while preserving the immutable capture snapshot. */
+  async updateEntryContent(id: number, content: string, entryDate?: string, entryTime?: string | null): Promise<void> {
+    if (entryDate) {
+      this.db.run('UPDATE entries SET content = ?, entry_date = ?, entry_time = ? WHERE id = ?', [content, entryDate, entryTime ?? null, id])
+    } else {
+      this.db.run('UPDATE entries SET content = ? WHERE id = ?', [content, id])
+    }
     this.save()
   }
 

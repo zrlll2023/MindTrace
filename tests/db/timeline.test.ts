@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { initDb } from '../../electron/db/connection'
 import { Repo, NewEntry } from '../../electron/db/repository'
+import { dailyMetrics } from '../../electron/analysis/labs'
 
 async function seededDb(): Promise<Repo> {
   const repo = new Repo(await initDb(':memory:'))
@@ -65,5 +66,14 @@ describe('时间线查询', () => {
     await repo.insertEntry({ ...base, content: JSON.stringify({ text: '晚上' }), entry_time: '20:30' })
     const entries = await repo.listEntries({})
     expect(entries.map(entry => entry.entry_time)).toEqual(['20:30', '09:00', null])
+  })
+
+  it('生活趋势将同日多个睡眠段求和而不是取平均', async () => {
+    const repo = new Repo(await initDb(':memory:'))
+    const base = { raw_text: 'sleep', kind: 'sleep' as const, confidence: 1, source: 'manual', entry_date: '2026-09-17' }
+    await repo.insertEntry({ ...base, content: JSON.stringify({ recordType: 'session', startAt: '2026-09-16 23:00', endAt: '2026-09-17 06:00', hours: 7 }) })
+    await repo.insertEntry({ ...base, content: JSON.stringify({ recordType: 'session', startAt: '2026-09-17 13:30', endAt: '2026-09-17 14:30', hours: 1 }) })
+    const [day] = await dailyMetrics(repo, '2026-09-17', '2026-09-17')
+    expect(day).toMatchObject({ sleep_hours: 8, sleep_sessions: 2, longest_sleep_hours: 7, sleep_data_mode: 'sessions' })
   })
 })

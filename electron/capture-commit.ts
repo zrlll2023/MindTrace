@@ -47,6 +47,12 @@ export async function commitCaptureEntries(repo: Repo, messageId: number, entrie
       const validated = validateParsedEntry(entry)
       if (!validated.ok || !validated.entry) throw new Error(`第 ${index + 1} 条记录内容无效`)
       const value = validated.entry
+      if (value.kind === 'sleep') {
+        const existingSleep = await repo.listEntries({ dateFrom: entry.entryDate, dateTo: entry.entryDate, kind: 'sleep', limit: 1 })
+        if (existingSleep.length) {
+          throw new Error(`第 ${index + 1} 条记录：当天已有睡眠记录，请到时间线更正已有记录或使用手动分段录入`)
+        }
+      }
       const newEntry: NewEntry = {
         raw_text: raw,
         kind: value.kind,
