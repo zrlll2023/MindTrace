@@ -76,4 +76,17 @@ describe('时间线查询', () => {
     const [day] = await dailyMetrics(repo, '2026-09-17', '2026-09-17')
     expect(day).toMatchObject({ sleep_hours: 8, sleep_sessions: 2, longest_sleep_hours: 7, sleep_data_mode: 'sessions' })
   })
+
+  it('生活趋势区分未填写事件分类与明确的非负面事件', async () => {
+    const repo = new Repo(await initDb(':memory:'))
+    const base = { raw_text: 'event', kind: 'event' as const, confidence: 1, source: 'manual' }
+    await repo.insertEntry({ ...base, entry_date: '2026-09-15', content: JSON.stringify({ text: '未分类事件' }) })
+    await repo.insertEntry({ ...base, entry_date: '2026-09-16', content: JSON.stringify({ text: '普通事件', negative: false }) })
+    await repo.insertEntry({ ...base, entry_date: '2026-09-16', content: JSON.stringify({ text: '负面事件', negative: true }) })
+
+    const metrics = await dailyMetrics(repo, '2026-09-14', '2026-09-16')
+    expect(metrics.find(day => day.date === '2026-09-14')).toMatchObject({ entry_count: 0, classified_event_count: 0, negative_count: 0 })
+    expect(metrics.find(day => day.date === '2026-09-15')).toMatchObject({ entry_count: 1, classified_event_count: 0, negative_count: 0 })
+    expect(metrics.find(day => day.date === '2026-09-16')).toMatchObject({ entry_count: 2, classified_event_count: 2, negative_count: 1 })
+  })
 })

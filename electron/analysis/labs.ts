@@ -1,4 +1,5 @@
 import { Entry, Repo } from '../db/repository'
+import type { DayMetrics } from '../types'
 import { summarizeSleepDay } from './sleep'
 
 /**
@@ -7,26 +8,15 @@ import { summarizeSleepDay } from './sleep'
  * 2. 引导式周度研究：AI 出搜索词 → 人工在浏览器搜索并粘贴感兴趣内容 → 入库为 quote/idea
  */
 
-export interface DayMetrics {
-  date: string
-  sleep_hours: number | null
-  negative_count: number
-  entry_count: number
-  idea_count: number
-  sleep_sessions: number
-  longest_sleep_hours: number | null
-  sleep_data_mode: 'sessions' | 'daily_total' | 'duration_only' | 'none'
-}
-
 export async function dailyMetrics(repo: Repo, dateFrom: string, dateTo: string): Promise<DayMetrics[]> {
   const entries = await repo.listEntries({ dateFrom, dateTo, limit: 5000 })
-  const byDate = new Map<string, { entries: Entry[]; neg: number; ideas: number; total: number }>()
+  const byDate = new Map<string, { entries: Entry[]; neg: number; classifiedEvents: number; ideas: number; total: number }>()
   // 先铺满日期区间（含无记录日）
   const start = new Date(dateFrom)
   const end = new Date(dateTo)
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const key = d.toISOString().slice(0, 10)
-    byDate.set(key, { entries: [], neg: 0, ideas: 0, total: 0 })
+    byDate.set(key, { entries: [], neg: 0, classifiedEvents: 0, ideas: 0, total: 0 })
   }
   for (const e of entries) {
     const day = byDate.get(e.entry_date)
@@ -39,7 +29,10 @@ export async function dailyMetrics(repo: Repo, dateFrom: string, dateTo: string)
     } catch {
       continue
     }
-    if (e.kind === 'event' && content.negative === true) day.neg++
+    if (e.kind === 'event' && typeof content.negative === 'boolean') {
+      day.classifiedEvents++
+      if (content.negative) day.neg++
+    }
     if (e.kind === 'idea') day.ideas++
   }
   return [...byDate.entries()].map(([date, d]) => {
@@ -48,6 +41,7 @@ export async function dailyMetrics(repo: Repo, dateFrom: string, dateTo: string)
       date,
       sleep_hours: sleep.totalHours,
       negative_count: d.neg,
+      classified_event_count: d.classifiedEvents,
       entry_count: d.total,
       idea_count: d.ideas,
       sleep_sessions: sleep.sessionCount,

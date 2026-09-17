@@ -5,6 +5,18 @@
 export type EntryKind = 'sleep' | 'event' | 'conversation' | 'quote' | 'idea' | 'other'
 export type ReportType = 'daily' | 'weekly'
 
+export interface DayMetrics {
+  date: string
+  sleep_hours: number | null
+  negative_count: number
+  classified_event_count: number
+  entry_count: number
+  idea_count: number
+  sleep_sessions: number
+  longest_sleep_hours: number | null
+  sleep_data_mode: 'sessions' | 'daily_total' | 'duration_only' | 'none'
+}
+
 export interface SleepSessionContent {
   recordType: 'session'
   /** Local date and time, formatted as YYYY-MM-DD HH:mm. */
