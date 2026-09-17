@@ -182,7 +182,11 @@ onMounted(() => void loadArchive())
 .viewer-head h2 {
   font-family: var(--font-sans); font-size: 16px; margin: 0;
 }
-.md { flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
+.md {
+  flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px;
+  font-family: SimSun, '宋体', 'Songti SC', 'Noto Serif CJK SC', serif;
+}
+.md :deep(*) { font-family: inherit; }
 .md :deep(h2:first-child) { margin-top: 0; }
 .viewer > .empty { flex: 1; display: grid; place-content: center; }
 
