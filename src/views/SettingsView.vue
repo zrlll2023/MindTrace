@@ -142,6 +142,21 @@
         <button v-if="migrationCheck?.ok" class="primary" :disabled="!migrationConfirmed || migrating" @click="migrateNow">{{ migrating ? '迁移校验中…' : '确认迁移' }}</button>
       </div>
       <div v-if="restartRequired" class="card accent"><b>迁移完成</b><p>旧目录仍保留。重启后启用新目录。</p><button class="primary" @click="restartApp">立即重启</button></div>
+
+      <div class="export-location">
+        <div class="field">
+          <label>报告导出目录</label>
+          <code class="path">{{ form.exportDirectory || '尚未设置，首次导出时询问' }}</code>
+          <p class="hint">日报和周报会保存到这里。清除后，下次导出会重新询问。</p>
+        </div>
+        <div class="row">
+          <button class="secondary" @click="chooseExportDir">
+            <Icon name="folder" :size="15" />{{ form.exportDirectory ? '更改导出目录' : '选择导出目录' }}
+          </button>
+          <button v-if="form.exportDirectory" class="ghost" @click="clearExportDir">清除设置</button>
+        </div>
+        <p v-if="exportLocationMessage" :class="exportLocationOk ? 'msg ok' : 'msg err'">{{ exportLocationMessage }}</p>
+      </div>
     </div>
   </div>
 </template>
@@ -170,6 +185,8 @@ const currentPreset = computed(() => store.presets.find(p => p.id === presetId.v
 const fetchingModels = ref(false)
 const saving = ref(false)
 const testing = ref(false)
+const exportLocationMessage = ref('')
+const exportLocationOk = ref(false)
 
 onMounted(async () => {
   await store.load()
@@ -256,6 +273,35 @@ const migrationText=computed(()=>migrationCheck.value?.ok?`可迁移 ${formatSiz
 async function chooseDataDir(){const r=await window.api.settings.selectDataDir();if(r.canceled)return;migrationTarget.value=r.path;migrationConfirmed.value=false;migrationCheck.value=await window.api.settings.inspectDataMigration(r.path)}
 async function migrateNow(){if(!migrationConfirmed.value)return;migrating.value=true;try{const r=await window.api.settings.migrateData(migrationTarget.value);restartRequired.value=!!r.ok}catch(e){migrationCheck.value={ok:false,error:(e as Error).message,bytes:0,freeBytes:0}}finally{migrating.value=false}}
 function restartApp(){void window.api.settings.restart()}
+
+async function chooseExportDir(): Promise<void> {
+  try {
+    const r = await window.api.settings.selectExportDir()
+    if (r.canceled) return
+    form.exportDirectory = r.path
+    store.payload.settings.exportDirectory = r.path
+    showExportLocationMessage('报告导出目录已更新', true)
+  } catch (e) {
+    showExportLocationMessage(`选择导出目录失败：${(e as Error).message}`, false)
+  }
+}
+
+async function clearExportDir(): Promise<void> {
+  try {
+    await window.api.settings.clearExportDir()
+    form.exportDirectory = ''
+    store.payload.settings.exportDirectory = ''
+    showExportLocationMessage('已清除报告导出目录', true)
+  } catch (e) {
+    showExportLocationMessage(`清除导出目录失败：${(e as Error).message}`, false)
+  }
+}
+
+function showExportLocationMessage(message: string, ok: boolean): void {
+  exportLocationMessage.value = message
+  exportLocationOk.value = ok
+  setTimeout(() => (exportLocationMessage.value = ''), 5000)
+}
 </script>
 
 <style scoped>
@@ -298,4 +344,6 @@ function restartApp(){void window.api.settings.restart()}
   border-radius: var(--r); padding: 7px 10px; word-break: break-all;
 }
 .migration-box{margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface-2)}
+.export-location { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.export-location .msg { margin-top: 10px; margin-bottom: 0; }
 </style>

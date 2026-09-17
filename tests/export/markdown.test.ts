@@ -18,6 +18,7 @@ describe('Markdown 导出', () => {
     expect(r.path).toContain('2026-09-14')
     expect(r.path).toContain('日报')
     expect(r.path.endsWith('.md')).toBe(true)
+    expect(path.dirname(r.path)).toBe(dir)
     const content = fs.readFileSync(r.path, 'utf8')
     expect(content).toContain('# 日报')
     expect(content).toContain('今天睡了6.5小时')
@@ -29,6 +30,16 @@ describe('Markdown 导出', () => {
     const r2 = await exportMarkdown(report, dir)
     expect(r2.path).toBeTruthy()
     expect(fs.readFileSync(r2.path, 'utf8')).toContain('v2')
+  })
+
+  it('自定义目录不存在时创建目录并直接导出到其中', async () => {
+    const target = path.join(dir, 'chosen', 'reports')
+    const r = await exportMarkdown(
+      { type: 'weekly', period: '2026-09-14', content_md: '本周总结', meta: '{}' },
+      target
+    )
+    expect(path.dirname(r.path)).toBe(target)
+    expect(fs.existsSync(r.path)).toBe(true)
   })
 })
 

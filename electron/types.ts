@@ -56,6 +56,7 @@ export interface AppSettings {
   providerId: string
   baseUrl: string
   model: string
+  exportDirectory: string // 报告导出目录；为空时首次导出询问
   // apiKey 不放这里：只走 SecretBox 加密存储（spec §8）
   desensitize: boolean // 出网脱敏开关
   backupRetention: number
@@ -69,6 +70,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   providerId: 'deepseek',
   baseUrl: 'https://api.deepseek.com',
   model: '',
+  exportDirectory: '',
   desensitize: true,
   backupRetention: 30,
   searchProvider: 'none',

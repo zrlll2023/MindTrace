@@ -7,15 +7,14 @@ const TYPE_NAMES: Record<ReportType, string> = {
   weekly: '周报'
 }
 
-/** 导出报告为 Markdown 文件到 <dataDir>/exports/；同名覆盖 */
+/** 导出报告为 Markdown 文件到用户选择的目录；同名覆盖。 */
 export async function exportMarkdown(
   report: Pick<Report, 'type' | 'period' | 'content_md' | 'meta'>,
-  dataDir: string
+  outputDir: string
 ): Promise<{ path: string }> {
-  const dir = path.join(dataDir, 'exports')
-  fs.mkdirSync(dir, { recursive: true })
+  fs.mkdirSync(outputDir, { recursive: true })
   const fileName = `${report.period}-${TYPE_NAMES[report.type]}.md`
-  const filePath = path.join(dir, fileName)
+  const filePath = path.join(outputDir, fileName)
 
   let header = `# ${TYPE_NAMES[report.type]} · ${report.period}\n\n`
   try {

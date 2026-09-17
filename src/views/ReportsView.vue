@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page reports-page">
     <div class="page-head">
       <h1 class="page-title">报告</h1>
       <p class="page-sub">AI 基于你的记录生成的日报与周报</p>
@@ -120,13 +120,19 @@ async function generate(): Promise<void> {
 
 async function exportCurrent(): Promise<void> {
   if (!current.value) return
-  const r = await window.api.export.md({
-    type: current.value.type,
-    period: current.value.period,
-    content_md: current.value.content_md,
-    meta: current.value.meta
-  })
-  if (r.path) showToast(`✅ 已导出：${r.path}`)
+  try {
+    const r = await window.api.export.md({
+      type: current.value.type,
+      period: current.value.period,
+      content_md: current.value.content_md,
+      meta: current.value.meta
+    })
+    if (r.canceled) showToast('已取消导出')
+    else if (r.error) showToast(`❌ ${r.error}`)
+    else if (r.path) showToast(`✅ 已导出：${r.path}`)
+  } catch (e) {
+    showToast(`❌ 导出失败：${(e as Error).message}`)
+  }
 }
 
 function showToast(msg: string): void {
@@ -138,15 +144,19 @@ onMounted(() => void loadArchive())
 </script>
 
 <style scoped>
+.reports-page {
+  height: 100%; display: flex; flex-direction: column; overflow: hidden;
+}
+.page-head { flex: 0 0 auto; }
 .topbar {
   display: flex; justify-content: space-between; align-items: center;
-  gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+  gap: 12px; flex: 0 0 auto; flex-wrap: wrap; margin-bottom: 16px;
 }
 .actions { display: flex; gap: 10px; align-items: center; }
 .actions :deep(.dp--main) { width: 150px; }
 
-.body { display: flex; gap: 18px; flex: 1; min-height: 0; align-items: flex-start; }
-.archive { width: 168px; flex: 0 0 168px; }
+.body { display: flex; gap: 18px; flex: 1; min-height: 0; align-items: stretch; overflow: hidden; }
+.archive { width: 168px; flex: 0 0 168px; min-height: 0; overflow-y: auto; }
 .arch-item {
   display: block; width: 100%; text-align: left;
   padding: 8px 12px; border-radius: var(--r); margin-bottom: 3px;
@@ -161,18 +171,20 @@ onMounted(() => void loadArchive())
 .arch-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 12px; }
 
 .viewer {
-  flex: 1; min-width: 0; margin-bottom: 0;
-  max-height: calc(100vh - 210px); overflow-y: auto;
+  flex: 1; min-width: 0; min-height: 0; margin-bottom: 0;
+  display: flex; flex-direction: column; overflow: hidden;
 }
 .viewer-head {
   display: flex; justify-content: space-between; align-items: center;
-  gap: 12px; margin-bottom: 14px;
+  gap: 12px; flex: 0 0 auto; margin-bottom: 14px;
   padding-bottom: 12px; border-bottom: 1px solid var(--border);
 }
 .viewer-head h2 {
   font-family: var(--font-sans); font-size: 16px; margin: 0;
 }
+.md { flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
 .md :deep(h2:first-child) { margin-top: 0; }
+.viewer > .empty { flex: 1; display: grid; place-content: center; }
 
 .toast {
   position: fixed; bottom: 22px; right: 26px; margin: 0;
@@ -185,7 +197,7 @@ onMounted(() => void loadArchive())
 
 @media (max-width: 760px) {
   .body { flex-direction: column; }
-  .archive { width: 100%; flex: none; display: flex; gap: 6px; overflow-x: auto; }
+  .archive { width: 100%; flex: none; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; }
   .arch-item { width: auto; white-space: nowrap; margin-bottom: 0; }
 }
 </style>

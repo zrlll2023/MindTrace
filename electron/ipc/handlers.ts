@@ -129,6 +129,24 @@ export function registerIpcHandlers(): void {
     const r = await dialog.showOpenDialog({ title: '选择新的 MindTrace 数据目录', properties: ['openDirectory', 'createDirectory'] })
     return r.canceled || !r.filePaths.length ? { canceled: true } : { canceled: false, path: r.filePaths[0] }
   })
+  ipcMain.handle('settings:selectExportDir', async () => {
+    const c = getContext()
+    const current = c.getSettings().exportDirectory.trim()
+    const r = await dialog.showOpenDialog({
+      title: '选择报告导出目录',
+      defaultPath: current || app.getPath('documents'),
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (r.canceled || !r.filePaths.length) return { canceled: true }
+    const exportDirectory = r.filePaths[0]
+    c.saveSettings({ ...c.getSettings(), exportDirectory })
+    return { canceled: false, path: exportDirectory }
+  })
+  ipcMain.handle('settings:clearExportDir', () => {
+    const c = getContext()
+    c.saveSettings({ ...c.getSettings(), exportDirectory: '' })
+    return { ok: true }
+  })
   ipcMain.handle('settings:inspectDataMigration', (_e, target: string) => inspectMigration(getContext().dataDir, target))
   ipcMain.handle('settings:migrateData', (_e, target: string) => {
     const c = getContext()
@@ -363,15 +381,33 @@ export function registerIpcHandlers(): void {
   })
 
   // ---------- export / backup ----------
-  ipcMain.handle('export:md', (_e, report: { type: 'daily' | 'weekly'; period: string; content_md: string; meta: string }) =>
-    getContext().repo
-      ? (async () => {
-          const c = getContext()
-          const { exportMarkdown } = await import('../export/markdown.js')
-          return exportMarkdown(report, c.dataDir)
-        })()
-      : Promise.resolve({ path: '' })
-  )
+  ipcMain.handle('export:md', async (_e, report: { type: 'daily' | 'weekly'; period: string; content_md: string; meta: string }) => {
+    const c = getContext()
+    let exportDirectory = c.getSettings().exportDirectory.trim()
+
+    if (!exportDirectory) {
+      const r = await dialog.showOpenDialog({
+        title: '选择报告导出目录',
+        defaultPath: app.getPath('documents'),
+        properties: ['openDirectory', 'createDirectory']
+      })
+      if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true, path: '' }
+      exportDirectory = r.filePaths[0]
+      c.saveSettings({ ...c.getSettings(), exportDirectory })
+    }
+
+    try {
+      const { exportMarkdown } = await import('../export/markdown.js')
+      const result = await exportMarkdown(report, exportDirectory)
+      return { ok: true, ...result }
+    } catch (e) {
+      return {
+        ok: false,
+        path: '',
+        error: `无法导出报告：${(e as Error).message}。请到设置页面重新选择导出目录。`
+      }
+    }
+  })
   ipcMain.handle('backup:run', async () => {
     const c = getContext()
     c.repo.save() // 先落盘再备份，保证备份是最新状态
