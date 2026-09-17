@@ -110,7 +110,12 @@
     <div v-else class="capture">
       <div class="chat-tools">
         <span class="hint">本次对话会保存在本机，AI 会结合最近上下文理解你的记录。</span>
-        <button class="ghost small" type="button" @click="clearConversation">清空并新建</button>
+        <div class="chat-tool-actions">
+          <span v-if="clearMessage" class="msg err inline">{{ clearMessage }}</span>
+          <button class="ghost small" type="button" :disabled="clearing || store.busy || !!store.committingIds.length || !!store.undoingIds.length" @click="openClearDialog">
+            {{ clearing ? '正在清空…' : '清空并新建' }}
+          </button>
+        </div>
       </div>
       <div class="messages" ref="listEl">
         <div v-if="!store.messages.length" class="empty">
@@ -124,28 +129,34 @@
           </p>
         </div>
 
-        <div v-for="(m, i) in store.messages" :key="i" class="chat-msg" :class="m.role">
+        <div v-for="m in store.messages" :key="m.id" class="chat-msg" :class="m.role">
           <div class="bubble">
             <template v-if="m.role === 'user'">{{ m.text }}</template>
             <template v-else>
               <p v-if="m.error" class="err">⚠️ {{ m.error }}</p>
               <p v-if="m.text">{{ m.text }}</p>
-              <template v-if="m.parsed && !m.committed">
+              <template v-if="m.parsed">
                 <div v-for="(p, j) in m.parsed" :key="j" class="capture-entry-wrap">
-                  <EntryCard :entry="p" @remove="m.parsed!.splice(j, 1)" />
+                  <EntryCard :entry="p" :locked="!!m.committed" @remove="m.parsed!.splice(j, 1)" />
                   <div v-if="p.kind !== 'sleep'" class="ai-kb-choice">
                     <label class="checkbox">
-                      <input v-model="p.addToKnowledge" type="checkbox" />同时加入知识库
+                      <input v-model="p.addToKnowledge" type="checkbox" :disabled="m.committed" />同时加入知识库
                     </label>
-                    <select v-if="p.addToKnowledge" v-model.number="p.folderId">
+                    <select v-if="p.addToKnowledge" v-model.number="p.folderId" :disabled="m.committed">
                       <option :value="undefined">AI 快速记录（默认）</option>
-                      <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+                      <option v-for="f in manualFolders" :key="f.id" :value="f.id">{{ f.name }}</option>
                     </select>
                   </div>
                 </div>
-                <button class="primary" :disabled="!canArchive(m) || store.isCommitting(m.id)" @click="archiveMessage(m)">
-                  <Icon name="check" :size="15" />{{ store.isCommitting(m.id) ? '保存中…' : `保存到时间线（${m.parsed?.length} 条）` }}
-                </button>
+                <div class="archive-actions">
+                  <button v-if="!m.committed" class="primary" :disabled="!canArchive(m) || store.isCommitting(m.id)" @click="archiveMessage(m)">
+                    <Icon name="check" :size="15" />{{ store.isCommitting(m.id) ? '保存中…' : `保存到时间线（${m.parsed?.length} 条）` }}
+                  </button>
+                  <button v-else class="primary archived" type="button" disabled><Icon name="check" :size="15" />已保存</button>
+                  <button v-if="m.committed" class="ghost" type="button" :disabled="store.isUndoing(m.id)" @click="undoArchive(m)">
+                    {{ store.isUndoing(m.id) ? '撤回中…' : '撤回' }}
+                  </button>
+                </div>
               </template>
               <div v-if="m.profileDraft && Object.keys(m.profileDraft).length" class="profile-draft">
                 <strong>AI 识别到一些个人资料</strong>
@@ -157,6 +168,7 @@
                 <button class="secondary small" @click="confirmProfile(m)">{{ hasSelectedDraft(m) ? '确认所选资料' : '不采用资料草稿' }}</button>
               </div>
             </template>
+            <time v-if="formatMessageTime(m.createdAt)" class="message-time">{{ formatMessageTime(m.createdAt) }}</time>
           </div>
         </div>
 
@@ -169,6 +181,7 @@
 
       <div class="composer">
         <textarea
+          ref="composerEl"
           v-model="store.input"
           rows="3"
           placeholder="随手记录…（Enter 发送，Ctrl+Enter 换行）"
@@ -180,11 +193,31 @@
         </button>
       </div>
     </div>
+
+    <div v-if="clearDialogOpen" class="drawer-mask" @click.self="closeClearDialog">
+      <section class="clear-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-dialog-title" aria-describedby="clear-dialog-description" @keydown.esc="closeClearDialog">
+        <div class="clear-dialog-icon"><Icon name="trash" :size="20" /></div>
+        <div class="clear-dialog-copy">
+          <h3 id="clear-dialog-title">清空当前对话？</h3>
+          <p id="clear-dialog-description">当前 AI 快速记录对话会被清空，已经保存到时间线和知识库的内容不会删除。</p>
+        </div>
+        <div class="clear-dialog-actions">
+          <button ref="cancelClearButton" class="ghost" type="button" :disabled="clearing" @click="closeClearDialog">取消</button>
+          <button class="danger" type="button" :disabled="clearing" @click="confirmClearConversation">
+            {{ clearing ? '正在清空…' : '清空并新建' }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="archiveToast" class="capture-toast" role="status">
+      <Icon name="check" :size="16" />{{ archiveToast }}
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted, reactive } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCaptureStore, ChatMessageItem, isCaptureEntryValid } from '../stores/capture'
 import EntryCard from '../components/EntryCard.vue'
@@ -198,6 +231,13 @@ import { localDateString } from '../utils/datetime'
 const store = useCaptureStore()
 const route = useRoute()
 const listEl = ref<HTMLElement>()
+const composerEl = ref<HTMLTextAreaElement>()
+const cancelClearButton = ref<HTMLButtonElement>()
+const clearing = ref(false)
+const clearMessage = ref('')
+const clearDialogOpen = ref(false)
+const archiveToast = ref('')
+let archiveToastTimer: ReturnType<typeof setTimeout> | undefined
 
 const mode = ref<'manual' | 'ai'>('manual')
 interface Folder { id: number; name: string; system_key?: string | null }
@@ -339,7 +379,26 @@ async function submit(): Promise<void> {
 }
 
 async function archiveMessage(m: ChatMessageItem): Promise<void> {
-  if (m.parsed) await store.commit(m, m.parsed)
+  if (!m.parsed) return
+  const entries = [...m.parsed]
+  if (await store.commit(m, entries)) {
+    const knowledgeCount = entries.filter(entry => entry.kind !== 'sleep' && entry.addToKnowledge).length
+    showArchiveToast(`已添加 ${entries.length} 条到时间线${knowledgeCount ? `，${knowledgeCount} 条加入知识库` : ''}`)
+    await loadFolders()
+  }
+}
+
+async function undoArchive(m: ChatMessageItem): Promise<void> {
+  if (await store.undo(m)) {
+    showArchiveToast('已撤回本次添加')
+    await loadFolders()
+  }
+}
+
+function showArchiveToast(message: string): void {
+  archiveToast.value = message
+  if (archiveToastTimer) clearTimeout(archiveToastTimer)
+  archiveToastTimer = setTimeout(() => { archiveToast.value = '' }, 2600)
 }
 
 function canArchive(m: ChatMessageItem): boolean {
@@ -348,19 +407,46 @@ function canArchive(m: ChatMessageItem): boolean {
 
 async function loadFolders(): Promise<void> {
   folders.value = await window.api.kb.listFolders()
-  const aiFolder = folders.value.find(f => f.system_key === 'ai_quick_capture')
-  if (aiFolder) {
-    store.defaultFolderId = aiFolder.id
-    for (const m of store.messages) for (const p of m.parsed ?? []) if (p.kind !== 'sleep' && !p.folderId) p.folderId = aiFolder.id
-  }
   if (!manualFolders.value.some(folder => folder.id === manualFolderId.value)) {
     manualFolderId.value = manualFolders.value[0]?.id ?? 0
   }
 }
 
-async function clearConversation(): Promise<void> {
-  if (!window.confirm('确定清空当前 AI 快速记录对话并新建吗？已经归档的记录和知识资料不会删除。')) return
-  await store.clear()
+async function openClearDialog(): Promise<void> {
+  clearMessage.value = ''
+  clearDialogOpen.value = true
+  await nextTick()
+  cancelClearButton.value?.focus()
+}
+
+function closeClearDialog(): void {
+  if (clearing.value) return
+  clearDialogOpen.value = false
+}
+
+async function confirmClearConversation(): Promise<void> {
+  clearing.value = true
+  clearMessage.value = ''
+  try {
+    const cleared = await store.clear()
+    if (!cleared) {
+      clearMessage.value = store.busy || store.committingIds.length ? '请等待当前操作完成后再清空' : '清空失败，请重试'
+      return
+    }
+    clearDialogOpen.value = false
+    await nextTick()
+    composerEl.value?.focus()
+  } catch (error) {
+    clearMessage.value = error instanceof Error ? error.message : '清空失败，请重试'
+  } finally {
+    clearing.value = false
+  }
+}
+
+function formatMessageTime(value?: string): string {
+  if (!value) return ''
+  const normalized = value.trim().replace('T', ' ')
+  return normalized.length >= 16 ? normalized.slice(0, 16) : normalized
 }
 
 const PROFILE_LABELS: Record<string, string> = { name: '名称', preferredName: '称呼', identity: '职业/身份', location: '所在地', bio: '个人简介', goals: '关注目标', interests: '兴趣' }
@@ -382,12 +468,16 @@ async function confirmProfile(m: ChatMessageItem): Promise<void> {
   else m.error = result.error
 }
 
+async function scrollToLatest(behavior: ScrollBehavior = 'auto'): Promise<void> {
+  await nextTick()
+  const list = listEl.value
+  if (!list) return
+  list.scrollTo({ top: list.scrollHeight, behavior })
+}
+
 watch(
   () => store.messages.length,
-  async () => {
-    await nextTick()
-    listEl.value?.scrollTo({ top: listEl.value.scrollHeight, behavior: 'smooth' })
-  }
+  () => scrollToLatest('smooth')
 )
 
 onMounted(async () => {
@@ -399,8 +489,15 @@ onMounted(async () => {
   }
   await store.load()
   await loadFolders()
+  if (mode.value === 'ai') await scrollToLatest()
 })
-watch(mode, v => localStorage.setItem('mt-capture-mode', v))
+onBeforeUnmount(() => {
+  if (archiveToastTimer) clearTimeout(archiveToastTimer)
+})
+watch(mode, v => {
+  localStorage.setItem('mt-capture-mode', v)
+  if (v === 'ai') void scrollToLatest()
+})
 </script>
 
 <style scoped>
@@ -440,6 +537,7 @@ watch(mode, v => localStorage.setItem('mt-capture-mode', v))
 /* AI 聊天 */
 .capture { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .chat-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; }
+.chat-tool-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .messages { flex: 1; overflow-y: auto; padding: 4px 4px 8px; }
 .empty { margin-top: 8vh; }
 .empty h3 { font-family: var(--font-serif); font-size: 19px; color: var(--text); }
@@ -460,6 +558,14 @@ watch(mode, v => localStorage.setItem('mt-capture-mode', v))
 }
 .chat-msg.assistant .bubble { min-width: 320px; }
 .bubble .primary { margin-top: 8px; }
+.archive-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.archive-actions .primary { margin-top: 0; }
+.archive-actions .archived { opacity: 0.58; cursor: not-allowed; }
+.message-time {
+  display: block; margin-top: 7px; color: var(--text-3); font-size: 11px;
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.chat-msg.user .message-time { color: color-mix(in srgb, var(--on-accent) 72%, transparent); }
 .err { color: var(--danger); font-size: 13px; }
 .capture-entry-wrap { margin: 7px 0; }
 .capture-entry-wrap :deep(.entry-card) { margin-bottom: 0; }
@@ -480,7 +586,42 @@ watch(mode, v => localStorage.setItem('mt-capture-mode', v))
 .dots i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes blink { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
 
-.composer { display: flex; gap: 10px; padding: 12px 4px 0; align-items: flex-end; }
-.composer textarea { flex: 1; resize: none; border-radius: var(--r-md); }
+.composer {
+  display: flex; gap: 10px; padding: 10px; align-items: flex-end;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.composer textarea { flex: 1; min-height: 72px; resize: none; border-radius: var(--r-md); background: var(--surface-2); }
+.composer textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
 .composer button { padding: 10px 22px; border-radius: var(--r-md); }
+
+.clear-dialog {
+  display: grid; grid-template-columns: auto 1fr; gap: 12px 14px;
+  width: min(420px, calc(100vw - 32px)); padding: 20px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); box-shadow: var(--shadow-lg);
+}
+.clear-dialog-icon {
+  display: grid; place-items: center; width: 38px; height: 38px;
+  border-radius: var(--r); color: var(--danger); background: var(--danger-weak);
+}
+.clear-dialog-copy h3 { margin: 1px 0 7px; font-size: 16px; }
+.clear-dialog-copy p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.65; }
+.clear-dialog-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.capture-toast {
+  position: fixed; z-index: 70; top: 68px; right: 22px;
+  display: flex; align-items: center; gap: 8px; max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border));
+  border-radius: var(--r); color: var(--ok); background: var(--surface);
+  box-shadow: var(--shadow-lg); font-size: 13px;
+  animation: toast-in 0.18s var(--ease);
+}
+@keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (max-width: 640px) {
+  .chat-tools { align-items: flex-start; flex-direction: column; }
+  .chat-tool-actions { width: 100%; justify-content: space-between; }
+  .composer { align-items: stretch; flex-direction: column; }
+  .composer button { align-self: flex-end; }
+}
 </style>

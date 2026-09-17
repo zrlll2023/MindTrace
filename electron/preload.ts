@@ -41,6 +41,7 @@ const api = {
     list: () => ipcRenderer.invoke('capture:list'),
     parse: (raw: string) => ipcRenderer.invoke('capture:parse', raw),
     commit: (messageId: number, entries: unknown[]) => ipcRenderer.invoke('capture:commit', messageId, entries),
+    undoCommit: (messageId: number) => ipcRenderer.invoke('capture:undoCommit', messageId),
     clear: () => ipcRenderer.invoke('capture:clear')
   },
   entries: {

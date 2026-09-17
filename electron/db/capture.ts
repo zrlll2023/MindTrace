@@ -10,6 +10,7 @@ export interface CaptureMessage {
   committed: boolean
   error?: string
   createdAt: string
+  archivedEntryIds?: number[]
 }
 
 export class CaptureHistory {
@@ -25,7 +26,8 @@ export class CaptureHistory {
         parsed: row.parsed_json ? JSON.parse(String(row.parsed_json)) : undefined,
         profileDraft: row.profile_draft_json ? JSON.parse(String(row.profile_draft_json)) : undefined,
         committed: Number(row.committed) === 1, error: String(row.error ?? '') || undefined,
-        createdAt: String(row.created_at ?? '')
+        createdAt: String(row.created_at ?? ''),
+        archivedEntryIds: row.archived_entry_ids_json ? JSON.parse(String(row.archived_entry_ids_json)) : undefined
       }
     })
   }
@@ -38,8 +40,23 @@ export class CaptureHistory {
     return this.list().at(-1)!
   }
 
-  markCommitted(id: number, text = '已保存到时间线'): void {
-    this.db.run('UPDATE capture_messages SET committed = 1, parsed_json = NULL, text = ?, error = ? WHERE id = ?', [text, '', id])
+  has(id: number): boolean {
+    const result = this.db.exec('SELECT 1 FROM capture_messages WHERE id = ? LIMIT 1', [id])
+    return result.length > 0 && result[0].values.length > 0
+  }
+
+  markCommitted(id: number, entryIds: number[], parsed: unknown[]): void {
+    this.db.run(
+      'UPDATE capture_messages SET committed = 1, parsed_json = ?, archived_entry_ids_json = ?, error = ? WHERE id = ?',
+      [JSON.stringify(parsed), JSON.stringify(entryIds), '', id]
+    )
+  }
+
+  markUncommitted(id: number): void {
+    this.db.run(
+      'UPDATE capture_messages SET committed = 0, archived_entry_ids_json = NULL, error = ? WHERE id = ?',
+      ['', id]
+    )
   }
 
   clear(): void { this.db.run('DELETE FROM capture_messages') }

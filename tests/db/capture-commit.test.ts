@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { commitCaptureEntries, CaptureChoice } from '../../electron/capture-commit'
+import { commitCaptureEntries, CaptureChoice, undoCaptureCommit } from '../../electron/capture-commit'
 import { CaptureHistory } from '../../electron/db/capture'
 import { initDb } from '../../electron/db/connection'
 import { KnowledgeBase } from '../../electron/db/knowledge'
@@ -34,16 +34,56 @@ describe('AI 快速记录归档事务', () => {
     expect(saved).toHaveLength(1)
     expect(saved[0]).toMatchObject({ entry_date: '2026-09-15', entry_time: '21:00' })
     expect(new KnowledgeBase(repo.getDb()).listFolders()).toHaveLength(0)
-    expect(history.list().find(message => message.id === messageId)).toMatchObject({ committed: true, text: '已保存 1 条到时间线' })
+    expect(history.list().find(message => message.id === messageId)).toMatchObject({
+      committed: true,
+      text: '请确认',
+      archivedEntryIds: [saved[0].id]
+    })
+    expect(history.list().find(message => message.id === messageId)?.parsed).toHaveLength(1)
   })
 
   it('用户勾选后同时写入默认知识库文件夹', async () => {
-    const { repo, messageId } = await fixture()
+    const { repo, history, messageId } = await fixture()
     await commitCaptureEntries(repo, messageId, [choice({ addToKnowledge: true })])
     const kb = new KnowledgeBase(repo.getDb())
     const folder = kb.listFolders().find(item => item.system_key === 'ai_quick_capture')
     expect(folder).toBeTruthy()
     expect(kb.listItems(folder!.id)).toHaveLength(1)
+    expect(history.list().find(message => message.id === messageId)?.parsed?.[0]).toMatchObject({ addToKnowledge: true })
+  })
+
+  it('一键撤回本次时间线记录和关联知识资料并恢复卡片', async () => {
+    const { repo, history, messageId } = await fixture()
+    await commitCaptureEntries(repo, messageId, [choice({ addToKnowledge: true })])
+
+    const result = await undoCaptureCommit(repo, messageId)
+    expect(result).toEqual({ timelineCount: 1, knowledgeCount: 1 })
+    expect(await repo.listEntries({})).toHaveLength(0)
+    const kb = new KnowledgeBase(repo.getDb())
+    const folder = kb.listFolders().find(item => item.system_key === 'ai_quick_capture')
+    expect(kb.listItems(folder!.id)).toHaveLength(0)
+    expect(history.list().find(message => message.id === messageId)).toMatchObject({ committed: false, text: '请确认' })
+    expect(history.list().find(message => message.id === messageId)?.parsed).toHaveLength(1)
+    expect(history.list().find(message => message.id === messageId)?.archivedEntryIds).toBeUndefined()
+  })
+
+  it('同一次归档不能重复撤回', async () => {
+    const { repo, messageId } = await fixture()
+    await commitCaptureEntries(repo, messageId, [choice()])
+    await undoCaptureCommit(repo, messageId)
+    await expect(undoCaptureCommit(repo, messageId)).rejects.toThrow('没有可撤回')
+  })
+
+  it('默认系统目录被删除后归档时自动重建', async () => {
+    const { repo, messageId } = await fixture()
+    const kb = new KnowledgeBase(repo.getDb())
+    const removed = kb.ensureRequiredFolders()[0]
+    repo.getDb().run('DELETE FROM kb_folders WHERE id = ?', [removed.id])
+
+    await commitCaptureEntries(repo, messageId, [choice({ addToKnowledge: true })])
+    const rebuilt = kb.listFolders().find(item => item.system_key === 'ai_quick_capture')
+    expect(rebuilt?.id).not.toBe(removed.id)
+    expect(kb.listItems(rebuilt!.id)).toHaveLength(1)
   })
 
   it('批量中任一条无效时回滚全部记录并保留待确认状态', async () => {

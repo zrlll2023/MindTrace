@@ -38,10 +38,11 @@
         <div v-if="!folders.length" class="arch-empty">还没有文件夹</div>
 
         <div v-if="creatingFolder" class="new-folder">
-          <input v-model="newFolderName" placeholder="文件夹名" @keyup.enter="createFolder" />
+          <input v-model="newFolderName" placeholder="文件夹名" :aria-invalid="!!newFolderError" @input="folderMessage = ''" @keyup.enter="createFolder" />
+          <p v-if="newFolderError || folderMessage" class="msg err folder-error">{{ newFolderError || folderMessage }}</p>
           <div class="row" style="margin-top: 8px">
-            <button class="primary small" @click="createFolder">创建</button>
-            <button class="ghost small" @click="creatingFolder = false">取消</button>
+            <button class="primary small" :disabled="!!newFolderError" @click="createFolder">创建</button>
+            <button class="ghost small" @click="cancelCreateFolder">取消</button>
           </div>
         </div>
       </aside>
@@ -153,6 +154,7 @@
             <Icon name="sparkles" :size="15" />
             {{ summarizing ? 'AI 总结中…' : 'AI 一键总结' }}
           </button>
+          <span v-if="detailMessage" :class="detailOk ? 'msg ok inline' : 'msg err inline'">{{ detailMessage }}</span>
         </div>
 
         <div v-if="detail.ai_summary" class="card accent">
@@ -165,7 +167,7 @@
           <textarea v-model="detailReflection" rows="3" placeholder="这份资料让你想到了什么？" />
         </div>
         <button class="primary small" @click="saveReflection">保存感受</button>
-        <span v-if="detailSaved" class="msg ok inline" style="margin-left: 8px">已保存 ✓</span>
+        <span v-if="reflectionMessage" :class="reflectionOk ? 'msg ok inline' : 'msg err inline'" style="margin-left: 8px">{{ reflectionMessage }}</span>
       </div>
     </div>
   </div>
@@ -208,6 +210,7 @@ const items = ref<KbItem[]>([])
 
 const creatingFolder = ref(false)
 const newFolderName = ref('')
+const folderMessage = ref('')
 const creatingItem = ref(false)
 const newItem = reactive({ title: '', body: '', reason: '' })
 const itemMessage = ref('')
@@ -217,7 +220,10 @@ const detail = ref<KbItem | null>(null)
 const detailBody = ref('')
 const detailReason = ref('')
 const detailReflection = ref('')
-const detailSaved = ref(false)
+const detailMessage = ref('')
+const detailOk = ref(false)
+const reflectionMessage = ref('')
+const reflectionOk = ref(false)
 const summarizing = ref(false)
 
 const extending = ref(false)
@@ -229,6 +235,14 @@ const importingFiles = ref(false)
 const fileImportMessage = ref('')
 const fileImportOk = ref(false)
 const isAiQuickCaptureFolder = computed(() => currentFolder.value?.system_key === AI_QUICK_CAPTURE_FOLDER_KEY)
+const newFolderError = computed(() => {
+  const name = newFolderName.value.trim()
+  if (!name) return '请输入文件夹名'
+  if (name.normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase() === 'ai快速记录'.toLocaleLowerCase()) {
+    return '“AI 快速记录”是系统保留名称'
+  }
+  return ''
+})
 
 const TYPE_LABELS: Record<string, string> = {
   markdown: 'Markdown',
@@ -240,7 +254,7 @@ const TYPE_LABELS: Record<string, string> = {
   pptx: 'PPT',
   xlsx: 'Excel',
   'ai-conversation': 'AI 对话',
-  entry: '记录'
+  entry: 'AI 记录'
 }
 function typeLabel(t: string): string {
   return TYPE_LABELS[t] ?? t
@@ -248,6 +262,15 @@ function typeLabel(t: string): string {
 
 async function loadFolders(): Promise<void> {
   folders.value = await window.api.kb.listFolders()
+  if (currentFolder.value) {
+    const previousId = currentFolder.value.id
+    const replacement = currentFolder.value.system_key
+      ? folders.value.find(folder => folder.system_key === currentFolder.value?.system_key)
+      : folders.value.find(folder => folder.id === currentFolder.value?.id)
+    currentFolder.value = replacement ?? null
+    if (!replacement) items.value = []
+    else if (replacement.id !== previousId) items.value = await window.api.kb.listItems(replacement.id)
+  }
 }
 
 async function selectFolder(f: KbFolder): Promise<void> {
@@ -258,13 +281,25 @@ async function selectFolder(f: KbFolder): Promise<void> {
 }
 
 async function createFolder(): Promise<void> {
-  if (!newFolderName.value.trim()) return
-  const r = await window.api.kb.addFolder(newFolderName.value)
-  if (r.ok) {
-    creatingFolder.value = false
-    newFolderName.value = ''
-    await loadFolders()
+  if (newFolderError.value) return
+  folderMessage.value = ''
+  try {
+    const r = await window.api.kb.addFolder(newFolderName.value)
+    if (r.ok) {
+      cancelCreateFolder()
+      await loadFolders()
+    } else {
+      folderMessage.value = r.error || '创建失败'
+    }
+  } catch (error) {
+    folderMessage.value = error instanceof Error ? error.message : '创建失败'
   }
+}
+
+function cancelCreateFolder(): void {
+  creatingFolder.value = false
+  newFolderName.value = ''
+  folderMessage.value = ''
 }
 
 async function removeFolder(f: KbFolder): Promise<void> {
@@ -347,26 +382,56 @@ function openItem(it: KbItem): void {
   detailBody.value = it.body
   detailReason.value = it.reason
   detailReflection.value = it.reflection
-  detailSaved.value = false
+  detailMessage.value = ''
+  reflectionMessage.value = ''
 }
 
 async function saveDetail(): Promise<void> {
   if (!detail.value) return
-  await window.api.kb.updateItem(detail.value.id, { body: detailBody.value, reason: detailReason.value })
-  detail.value.body = detailBody.value
-  detail.value.reason = detailReason.value
-  detailSaved.value = true
-  setTimeout(() => (detailSaved.value = false), 2000)
-  await refreshList()
+  detailMessage.value = ''
+  detailOk.value = false
+  try {
+    const result = await window.api.kb.updateItem(detail.value.id, { body: detailBody.value, reason: detailReason.value })
+    const saved = result.item as KbItem | null | undefined
+    if (!result.ok || !saved) {
+      detailMessage.value = result.error || '保存修改失败'
+      return
+    }
+    if (saved.body !== detailBody.value || saved.reason !== detailReason.value) {
+      detailMessage.value = '保存结果校验失败，请重试'
+      return
+    }
+    detail.value = saved
+    detailOk.value = true
+    detailMessage.value = '修改已保存 ✓'
+    await refreshList()
+  } catch (error) {
+    detailMessage.value = error instanceof Error ? error.message : '保存修改失败'
+  }
 }
 
 async function saveReflection(): Promise<void> {
   if (!detail.value) return
-  await window.api.kb.updateReflection(detail.value.id, detailReflection.value)
-  detail.value.reflection = detailReflection.value
-  detailSaved.value = true
-  setTimeout(() => (detailSaved.value = false), 2000)
-  await refreshList()
+  reflectionMessage.value = ''
+  reflectionOk.value = false
+  try {
+    const result = await window.api.kb.updateReflection(detail.value.id, detailReflection.value)
+    const saved = result.item as KbItem | null | undefined
+    if (!result.ok || !saved) {
+      reflectionMessage.value = result.error || '保存感受失败'
+      return
+    }
+    if (saved.reflection !== detailReflection.value) {
+      reflectionMessage.value = '保存结果校验失败，请重试'
+      return
+    }
+    detail.value = saved
+    reflectionOk.value = true
+    reflectionMessage.value = '感受已保存 ✓'
+    await refreshList()
+  } catch (error) {
+    reflectionMessage.value = error instanceof Error ? error.message : '保存感受失败'
+  }
 }
 
 async function summarize(): Promise<void> {
@@ -467,6 +532,7 @@ onMounted(async () => {
 }
 .items-toolbar h3 { margin: 0; font-size: 15px; }
 .system-folder-note { color: var(--text-3); font-size: 12.5px; }
+.folder-error { margin: 6px 0 0; font-size: 12px; }
 
 .item { cursor: pointer; }
 .item:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }

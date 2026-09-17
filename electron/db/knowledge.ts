@@ -3,6 +3,20 @@ import { Database } from 'sql.js'
 export const AI_QUICK_CAPTURE_FOLDER_KEY = 'ai_quick_capture'
 export const AI_QUICK_CAPTURE_FOLDER_NAME = 'AI 快速记录'
 
+export function normalizeFolderName(name: string): string {
+  return name.normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase()
+}
+
+export function isReservedFolderName(name: string): boolean {
+  return normalizeFolderName(name) === normalizeFolderName(AI_QUICK_CAPTURE_FOLDER_NAME)
+}
+
+function updatedEntryTitle(currentTitle: string, body: string): string {
+  const prefix = currentTitle.match(/^(事件|对话|句子|想法|记录)：/)?.[1] ?? '记录'
+  const compact = body.replace(/\s+/g, ' ').trim()
+  return `${prefix}：${compact.slice(0, 48) || '未命名'}`
+}
+
 /**
  * 知识库数据层（v3）。
  * 文件夹 → 资料条目；条目携带用户的「收录原因」与「感受记录」，以及可选的 AI 总结。
@@ -60,14 +74,25 @@ export class KnowledgeBase {
   }
 
   addFolder(name: string, description = ''): KbFolder {
-    this.db.run('INSERT INTO kb_folders (name, description) VALUES (?, ?)', [name, description])
+    const cleanName = name.trim()
+    if (!cleanName) throw new Error('文件夹名不能为空')
+    if (isReservedFolderName(cleanName)) throw new Error('“AI 快速记录”是系统保留名称')
+    this.db.run('INSERT INTO kb_folders (name, description) VALUES (?, ?)', [cleanName, description])
     const id = this.db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
-    return { id, name, description, system_key: null, created_at: '' }
+    return { id, name: cleanName, description, system_key: null, created_at: '' }
   }
 
   ensureSystemFolder(systemKey: string, defaultName: string): KbFolder {
-    const found = this.listFolders().find(f => f.system_key === systemKey)
+    const folders = this.listFolders()
+    const found = folders.find(f => f.system_key === systemKey)
     if (found) return found
+    if (systemKey === AI_QUICK_CAPTURE_FOLDER_KEY) {
+      const legacy = folders.find(folder => isReservedFolderName(folder.name))
+      if (legacy) {
+        this.db.run('UPDATE kb_folders SET name = ?, system_key = ? WHERE id = ?', [defaultName, systemKey, legacy.id])
+        return { ...legacy, name: defaultName, system_key: systemKey }
+      }
+    }
     this.db.run('INSERT INTO kb_folders (name, description, system_key) VALUES (?, ?, ?)', [defaultName, '', systemKey])
     const id = this.db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number
     return { id, name: defaultName, description: '', system_key: systemKey, created_at: '' }
@@ -87,10 +112,13 @@ export class KnowledgeBase {
 
   renameFolder(id: number, name: string, description?: string): void {
     if (this.isAiQuickCaptureFolder(id)) throw new Error('AI 快速记录文件夹不允许重命名')
+    const cleanName = name.trim()
+    if (!cleanName) throw new Error('文件夹名不能为空')
+    if (isReservedFolderName(cleanName)) throw new Error('“AI 快速记录”是系统保留名称')
     if (description !== undefined) {
-      this.db.run('UPDATE kb_folders SET name = ?, description = ? WHERE id = ?', [name, description, id])
+      this.db.run('UPDATE kb_folders SET name = ?, description = ? WHERE id = ?', [cleanName, description, id])
     } else {
-      this.db.run('UPDATE kb_folders SET name = ? WHERE id = ?', [name, id])
+      this.db.run('UPDATE kb_folders SET name = ? WHERE id = ?', [cleanName, id])
     }
   }
 
@@ -143,21 +171,28 @@ export class KnowledgeBase {
   }
 
   /** 用户编辑主体内容/标题/原因 */
-  updateItem(id: number, patch: { title?: string; body?: string; reason?: string }): void {
+  updateItem(id: number, patch: { title?: string; body?: string; reason?: string }): boolean {
     const cur = this.getItem(id)
-    if (!cur) return
+    if (!cur) return false
+    const body = patch.body ?? cur.body
+    const title = patch.title ?? (cur.source_type === 'entry' && patch.body !== undefined
+      ? updatedEntryTitle(cur.title, body)
+      : cur.title)
     this.db.run(
       `UPDATE kb_items SET title = ?, body = ?, reason = ?, updated_at = datetime('now', 'localtime') WHERE id = ?`,
-      [patch.title ?? cur.title, patch.body ?? cur.body, patch.reason ?? cur.reason, id]
+      [title, body, patch.reason ?? cur.reason, id]
     )
+    return true
   }
 
   /** 用户记录感受（reflection 是用户自己的话，AI 不代写） */
-  updateReflection(id: number, text: string): void {
+  updateReflection(id: number, text: string): boolean {
+    if (!this.getItem(id)) return false
     this.db.run(
       `UPDATE kb_items SET reflection = ?, updated_at = datetime('now', 'localtime') WHERE id = ?`,
       [text, id]
     )
+    return true
   }
 
   /** AI 一键总结结果（仅此字段由 AI 写入，且只在用户点按钮时） */

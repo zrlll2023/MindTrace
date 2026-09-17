@@ -78,10 +78,38 @@ export async function commitCaptureEntries(repo: Repo, messageId: number, entrie
         })
       }
     }
-    history.markCommitted(messageId, `已保存 ${saved.length} 条到时间线`)
+    history.markCommitted(messageId, saved.map(entry => entry.id), entries)
     db.run('COMMIT')
     repo.save()
     return saved
+  } catch (error) {
+    try { db.run('ROLLBACK') } catch { /* no active transaction */ }
+    throw error
+  }
+}
+
+export async function undoCaptureCommit(repo: Repo, messageId: number): Promise<{ timelineCount: number; knowledgeCount: number }> {
+  const db = repo.getDb()
+  const history = new CaptureHistory(db)
+  const message = history.list().find(item => item.id === messageId && item.role === 'assistant')
+  const entryIds = message?.archivedEntryIds?.filter(id => Number.isInteger(id) && id > 0) ?? []
+  if (!message?.committed || !entryIds.length) throw new Error('没有可撤回的 AI 快速记录')
+
+  const placeholders = entryIds.map(() => '?').join(',')
+  db.run('BEGIN')
+  try {
+    const knowledgeResult = db.exec(`SELECT COUNT(*) FROM kb_items WHERE source_entry_id IN (${placeholders})`, entryIds)
+    const knowledgeCount = Number(knowledgeResult[0]?.values[0]?.[0] ?? 0)
+    const entryResult = db.exec(`SELECT COUNT(*) FROM entries WHERE id IN (${placeholders}) AND source = 'chat'`, entryIds)
+    const timelineCount = Number(entryResult[0]?.values[0]?.[0] ?? 0)
+    db.run(`DELETE FROM kb_items WHERE source_entry_id IN (${placeholders})`, entryIds)
+    db.run(`DELETE FROM entry_threads WHERE entry_id IN (${placeholders})`, entryIds)
+    try { db.run(`DELETE FROM vectors WHERE entry_id IN (${placeholders})`, entryIds) } catch { /* legacy database */ }
+    db.run(`DELETE FROM entries WHERE id IN (${placeholders}) AND source = 'chat'`, entryIds)
+    history.markUncommitted(messageId)
+    db.run('COMMIT')
+    repo.save()
+    return { timelineCount, knowledgeCount }
   } catch (error) {
     try { db.run('ROLLBACK') } catch { /* no active transaction */ }
     throw error

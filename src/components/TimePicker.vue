@@ -89,7 +89,7 @@ function step(field: 'hour' | 'minute', direction: number): void {
   else draftMinute.value = (draftMinute.value + direction * props.minutesIncrement + 60) % 60
 }
 function onWheel(field: 'hour' | 'minute', event: WheelEvent): void {
-  step(field, event.deltaY < 0 ? 1 : -1)
+  step(field, event.deltaY > 0 ? 1 : -1)
 }
 function apply(): void {
   emit('update:modelValue', `${pad(draftHour.value)}:${pad(draftMinute.value)}`)

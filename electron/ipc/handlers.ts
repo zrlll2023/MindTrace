@@ -18,7 +18,7 @@ import {
   restoreDefaultDataDir,
   undoScheduledMigration
 } from '../store/data-location'
-import { CaptureChoice, commitCaptureEntries } from '../capture-commit'
+import { CaptureChoice, commitCaptureEntries, undoCaptureCommit } from '../capture-commit'
 import { clearResearchDraft, getResearchDraft, researchWeekKey, saveResearchDraft } from '../store/research-draft'
 import { buildDiagnosticArchive, clearDiagnosticLogs, logError, logInfo, logsDirectory } from '../logger'
 
@@ -276,16 +276,22 @@ export function registerIpcHandlers(): void {
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商', parsed: [] }
     const history = new CaptureHistory(c.repo.getDb())
     const prior = history.context().map(m => ({ ...m, content: c.getSettings().desensitize ? desensitizeText(m.content) : m.content }))
-    history.add('user', raw)
+    const userMessage = history.add('user', raw)
     try {
       const outgoing = c.getSettings().desensitize ? desensitizeText(raw) : raw
       const profile = new ProfileStore(c.repo.getDb()).values()
       const result = await parseCaptureWith(llm, outgoing, prior, profile)
+      if (!history.has(userMessage.id)) {
+        return { ok: false, canceled: true, error: '对话已清空，本次 AI 回复已忽略', parsed: [] }
+      }
       const msg = history.add('assistant', '我解析出了以下内容，请确认：', { parsed: result.entries, profileDraft: result.profileDraft })
       const folder = new KnowledgeBase(c.repo.getDb()).ensureSystemFolder(AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME)
       c.repo.save()
       return { ok: true, message: msg, defaultFolderId: folder.id }
     } catch (e) {
+      if (!history.has(userMessage.id)) {
+        return { ok: false, canceled: true, error: '对话已清空，本次 AI 回复已忽略', parsed: [] }
+      }
       const msg = history.add('assistant', '', { error: (e as Error).message })
       c.repo.save()
       return { ok: false, error: (e as Error).message, message: msg, parsed: [] }
@@ -304,6 +310,13 @@ export function registerIpcHandlers(): void {
       }
     }
   )
+  ipcMain.handle('capture:undoCommit', async (_e, messageId: number) => {
+    try {
+      return { ok: true, ...(await undoCaptureCommit(getContext().repo, messageId)) }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message }
+    }
+  })
   ipcMain.handle('capture:clear', () => {
     const c = getContext()
     new CaptureHistory(c.repo.getDb()).clear()
@@ -613,25 +626,35 @@ export function registerIpcHandlers(): void {
   // ---------- 知识库（v3） ----------
   ipcMain.handle('kb:listFolders', () => {
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
-    return new KnowledgeBase(getContext().repo.getDb()).listFolders()
+    const c = getContext()
+    const kb = new KnowledgeBase(c.repo.getDb())
+    kb.ensureRequiredFolders()
+    c.repo.save()
+    return kb.listFolders()
   })
 
   ipcMain.handle('kb:addFolder', (_e, name: string, description?: string) => {
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
     const kb = new KnowledgeBase(getContext().repo.getDb())
-    if (!name.trim()) return { ok: false, error: '文件夹名不能为空' }
-    const f = kb.addFolder(name.trim(), description?.trim() ?? '')
-    getContext().repo.save()
-    return { ok: true, folder: f }
+    try {
+      const f = kb.addFolder(name, description?.trim() ?? '')
+      getContext().repo.save()
+      return { ok: true, folder: f }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message }
+    }
   })
 
   ipcMain.handle('kb:renameFolder', (_e, id: number, name: string, description?: string) => {
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
     const kb = new KnowledgeBase(getContext().repo.getDb())
-    if (kb.isAiQuickCaptureFolder(id)) return { ok: false, error: 'AI 快速记录文件夹不允许重命名' }
-    kb.renameFolder(id, name.trim(), description)
-    getContext().repo.save()
-    return { ok: true }
+    try {
+      kb.renameFolder(id, name, description)
+      getContext().repo.save()
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message }
+    }
   })
 
   ipcMain.handle('kb:deleteFolder', (_e, id: number) => {
@@ -681,17 +704,27 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('kb:updateItem', (_e, id: number, patch: { title?: string; body?: string; reason?: string }) => {
     const c = getContext()
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
-    new KnowledgeBase(c.repo.getDb()).updateItem(id, patch)
-    c.repo.save()
-    return { ok: true }
+    const kb = new KnowledgeBase(c.repo.getDb())
+    try {
+      if (!kb.updateItem(id, patch)) return { ok: false, error: '对应的知识资料不存在，可能已被删除' }
+      c.repo.save()
+      return { ok: true, item: kb.getItem(id) }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || '保存修改失败' }
+    }
   })
 
   ipcMain.handle('kb:updateReflection', (_e, id: number, text: string) => {
     const c = getContext()
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
-    new KnowledgeBase(c.repo.getDb()).updateReflection(id, text)
-    c.repo.save()
-    return { ok: true }
+    const kb = new KnowledgeBase(c.repo.getDb())
+    try {
+      if (!kb.updateReflection(id, text)) return { ok: false, error: '对应的知识资料不存在，可能已被删除' }
+      c.repo.save()
+      return { ok: true, item: kb.getItem(id) }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || '保存感受失败' }
+    }
   })
 
   ipcMain.handle('kb:deleteItem', (_e, id: number) => {

@@ -17,6 +17,8 @@ export interface ChatMessageItem {
   profileDraft?: ProfileValues
   committed?: boolean
   error?: string
+  createdAt?: string
+  archivedEntryIds?: number[]
 }
 
 export function changeCaptureEntryKind(entry: CaptureEntry, nextKind: EntryKind): void {
@@ -47,12 +49,16 @@ export function isCaptureEntryValid(entry: CaptureEntry): boolean {
   return typeof entry.content.text === 'string' && entry.content.text.trim().length > 0
 }
 
+export function toCaptureCommitPayload(entries: CaptureEntry[]): CaptureEntry[] {
+  return JSON.parse(JSON.stringify(entries)) as CaptureEntry[]
+}
+
 export const useCaptureStore = defineStore('capture', () => {
   const messages = ref<ChatMessageItem[]>([])
   const busy = ref(false)
   const input = ref('')
-  const defaultFolderId = ref<number>()
   const committingIds = ref<number[]>([])
+  const undoingIds = ref<number[]>([])
 
   function normalize(messagesIn: ChatMessageItem[]): ChatMessageItem[] {
     return messagesIn.map(m => ({
@@ -62,8 +68,8 @@ export const useCaptureStore = defineStore('capture', () => {
         ...p,
         entryDate: p.entryDate || localDateString(),
         originalKind: p.originalKind || p.kind,
-        addToKnowledge: false,
-        folderId: p.kind !== 'sleep' ? defaultFolderId.value : undefined
+        addToKnowledge: m.committed ? !!p.addToKnowledge : false,
+        folderId: p.kind !== 'sleep' ? p.folderId : undefined
       }))
     }))
   }
@@ -79,10 +85,15 @@ export const useCaptureStore = defineStore('capture', () => {
     busy.value = true
     try {
       const r = await window.api.capture.parse(raw)
-      if (r.defaultFolderId) defaultFolderId.value = r.defaultFolderId
+      if (r.canceled) return
+      if (!r.ok && !r.message) {
+        input.value = raw
+        messages.value.push({ id: Date.now(), role: 'assistant', text: '', error: r.error || 'AI 解析失败，请重试', createdAt: new Date().toLocaleString('sv-SE') })
+        return
+      }
       await load()
     } catch (e) {
-      messages.value.push({ id: Date.now(), role: 'assistant', text: '', error: (e as Error).message })
+      messages.value.push({ id: Date.now(), role: 'assistant', text: '', error: (e as Error).message, createdAt: new Date().toLocaleString('sv-SE') })
     } finally {
       busy.value = false
     }
@@ -97,14 +108,13 @@ export const useCaptureStore = defineStore('capture', () => {
     committingIds.value = [...committingIds.value, msg.id]
     msg.error = undefined
     try {
-      const r = await window.api.capture.commit(msg.id, entries)
+      const r = await window.api.capture.commit(msg.id, toCaptureCommitPayload(entries))
       if (!r.ok) {
         msg.error = r.error || '保存失败，请重试'
         return false
       }
       msg.committed = true
-      msg.text = `已保存 ${entries.length} 条到时间线`
-      msg.parsed = undefined
+      msg.archivedEntryIds = r.entries.map((entry: { id: number }) => entry.id)
       return true
     } catch (e) {
       msg.error = (e as Error).message || '保存失败，请重试'
@@ -114,14 +124,45 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
-  async function clear(): Promise<void> {
-    await window.api.capture.clear()
+  async function undo(msg: ChatMessageItem): Promise<boolean> {
+    if (undoingIds.value.includes(msg.id) || !msg.committed) return false
+    undoingIds.value = [...undoingIds.value, msg.id]
+    msg.error = undefined
+    try {
+      const result = await window.api.capture.undoCommit(msg.id)
+      if (!result.ok) {
+        msg.error = result.error || '撤回失败，请重试'
+        return false
+      }
+      msg.committed = false
+      msg.archivedEntryIds = undefined
+      return true
+    } catch (error) {
+      msg.error = error instanceof Error ? error.message : '撤回失败，请重试'
+      return false
+    } finally {
+      undoingIds.value = undoingIds.value.filter(id => id !== msg.id)
+    }
+  }
+
+  async function clear(): Promise<boolean> {
+    if (busy.value || committingIds.value.length || undoingIds.value.length) return false
+    const result = await window.api.capture.clear()
+    if (!result.ok) return false
     messages.value = []
+    input.value = ''
+    committingIds.value = []
+    undoingIds.value = []
+    return true
   }
 
   function isCommitting(messageId: number): boolean {
     return committingIds.value.includes(messageId)
   }
 
-  return { messages, busy, input, defaultFolderId, committingIds, load, send, commit, clear, isCommitting }
+  function isUndoing(messageId: number): boolean {
+    return undoingIds.value.includes(messageId)
+  }
+
+  return { messages, busy, input, committingIds, undoingIds, load, send, commit, undo, clear, isCommitting, isUndoing }
 })

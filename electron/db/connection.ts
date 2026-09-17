@@ -208,8 +208,13 @@ function migrate(db: Database): void {
     profile_draft_json TEXT,
     committed INTEGER NOT NULL DEFAULT 0,
     error TEXT DEFAULT '',
+    archived_entry_ids_json TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   )`)
+  const captureCols = db.exec('PRAGMA table_info(capture_messages)')
+  if (captureCols.length && !captureCols[0].values.some(v => v[1] === 'archived_entry_ids_json')) {
+    db.run('ALTER TABLE capture_messages ADD COLUMN archived_entry_ids_json TEXT')
+  }
 
   db.run(`CREATE TABLE IF NOT EXISTS profile_fields (
     key TEXT PRIMARY KEY,
