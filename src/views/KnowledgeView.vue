@@ -31,7 +31,7 @@
         >
           <Icon name="folder" :size="16" />
           <span class="f-name">{{ f.name }}</span>
-          <button class="ghost icon-btn" title="删除文件夹" @click.stop="removeFolder(f)">
+          <button v-if="f.system_key !== AI_QUICK_CAPTURE_FOLDER_KEY" class="ghost icon-btn" title="删除文件夹" @click.stop="removeFolder(f)">
             <Icon name="trash" :size="14" />
           </button>
         </div>
@@ -51,19 +51,22 @@
         <template v-if="currentFolder">
           <div class="items-toolbar">
             <h3>{{ currentFolder.name }}</h3>
-            <div class="row">
-              <button class="secondary small" @click="importFiles">
-                <Icon name="inbox" :size="15" />导入文件
+            <div v-if="!isAiQuickCaptureFolder" class="row">
+              <button class="secondary small" :disabled="importingFiles" @click="importFiles">
+                <Icon name="inbox" :size="15" />{{ importingFiles ? '导入中…' : '导入文件' }}
               </button>
               <button class="secondary small" @click="creatingItem = true">
-                <Icon name="pen" :size="15" />手动添加
+                <Icon name="pen" :size="15" />手动添加资料
               </button>
               <button class="primary small" :disabled="extending" @click="extendFolder">
                 <Icon name="sparkles" :size="15" />
                 {{ extending ? 'AI 延伸中…' : 'AI 延伸' }}
               </button>
             </div>
+            <span v-else class="system-folder-note">仅 AI 快速记录可写入</span>
           </div>
+
+          <p v-if="fileImportMessage" :class="fileImportOk ? 'msg ok' : 'msg err'">{{ fileImportMessage }}</p>
 
           <div v-if="extendResult" class="card accent">
             <h3>AI 延伸结果</h3>
@@ -88,7 +91,7 @@
           </article>
           <div v-if="!items.length" class="empty">
             <h3>这个文件夹还是空的</h3>
-            <p>导入文件或手动添加一条资料。</p>
+            <p>{{ isAiQuickCaptureFolder ? '在记录页面保存 AI 快速记录后，资料会出现在这里。' : '导入文件或手动添加一条资料。' }}</p>
           </div>
         </template>
 
@@ -107,11 +110,11 @@
           <button class="close" @click="creatingItem = false"><Icon name="close" :size="16" /></button>
         </div>
         <div class="field">
-          <label>标题</label>
+          <label>标题（必填）</label>
           <input v-model="newItem.title" placeholder="如：纸上得来终觉浅" />
         </div>
         <div class="field">
-          <label>内容（Markdown）</label>
+          <label>内容（Markdown，必填）</label>
           <textarea v-model="newItem.body" rows="8" placeholder="粘贴或撰写内容…" />
         </div>
         <div class="field">
@@ -119,9 +122,10 @@
           <input v-model="newItem.reason" placeholder="如：提醒自己重实践" />
         </div>
         <div class="row">
-          <button class="primary" :disabled="!newItem.title.trim()" @click="createItem">保存</button>
+          <button class="primary" :disabled="!newItem.title.trim() || !newItem.body.trim()" @click="createItem">保存</button>
           <button class="ghost" @click="creatingItem = false">取消</button>
         </div>
+        <p v-if="itemMessage" :class="itemOk ? 'msg ok' : 'msg err'">{{ itemMessage }}</p>
       </div>
     </div>
 
@@ -168,9 +172,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, reactive } from 'vue'
+import { computed, onMounted, ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
+
+const AI_QUICK_CAPTURE_FOLDER_KEY = 'ai_quick_capture'
 
 interface KbFolder {
   id: number
@@ -204,6 +210,8 @@ const creatingFolder = ref(false)
 const newFolderName = ref('')
 const creatingItem = ref(false)
 const newItem = reactive({ title: '', body: '', reason: '' })
+const itemMessage = ref('')
+const itemOk = ref(false)
 
 const detail = ref<KbItem | null>(null)
 const detailBody = ref('')
@@ -217,6 +225,10 @@ const extendResult = ref('')
 const importingConversations = ref(false)
 const importMessage = ref('')
 const importOk = ref(false)
+const importingFiles = ref(false)
+const fileImportMessage = ref('')
+const fileImportOk = ref(false)
+const isAiQuickCaptureFolder = computed(() => currentFolder.value?.system_key === AI_QUICK_CAPTURE_FOLDER_KEY)
 
 const TYPE_LABELS: Record<string, string> = {
   markdown: 'Markdown',
@@ -240,6 +252,8 @@ async function loadFolders(): Promise<void> {
 
 async function selectFolder(f: KbFolder): Promise<void> {
   currentFolder.value = f
+  extendResult.value = ''
+  fileImportMessage.value = ''
   items.value = await window.api.kb.listItems(f.id)
 }
 
@@ -264,27 +278,49 @@ async function removeFolder(f: KbFolder): Promise<void> {
 }
 
 async function createItem(): Promise<void> {
-  if (!currentFolder.value || !newItem.title.trim()) return
+  if (!currentFolder.value || !newItem.title.trim() || !newItem.body.trim()) return
+  itemMessage.value = ''
   const r = await window.api.kb.addItem(
     currentFolder.value.id,
-    { title: newItem.title, sourceType: 'markdown', reason: newItem.reason },
-    newItem.body
+    { title: newItem.title.trim(), sourceType: 'markdown', reason: newItem.reason },
+    newItem.body.trim()
   )
   if (r.ok) {
+    itemOk.value = true
     creatingItem.value = false
     newItem.title = ''
     newItem.body = ''
     newItem.reason = ''
     items.value = await window.api.kb.listItems(currentFolder.value.id)
+  } else {
+    itemOk.value = false
+    itemMessage.value = r.error || '保存失败'
   }
 }
 
 async function importFiles(): Promise<void> {
-  if (!currentFolder.value) return
-  const reason = prompt('这批资料收录的原因（可选，直接确定可跳过）') ?? undefined
-  const r = await window.api.kb.importFiles(currentFolder.value.id, reason || undefined)
-  if (r.ok) {
-    items.value = await window.api.kb.listItems(currentFolder.value.id)
+  if (!currentFolder.value || isAiQuickCaptureFolder.value) return
+  importingFiles.value = true
+  fileImportMessage.value = ''
+  try {
+    const r = await window.api.kb.importFiles(currentFolder.value.id)
+    if (r.canceled) return
+    if (r.ok) {
+      fileImportOk.value = true
+      const failed = r.failures?.length ?? 0
+      fileImportMessage.value = failed
+        ? `成功导入 ${r.imported} 个文件，${failed} 个文件失败：${r.failures.map((failure: { fileName: string; error: string }) => `${failure.fileName}（${failure.error}）`).join('；')}`
+        : `成功导入 ${r.imported} 个文件。`
+      items.value = await window.api.kb.listItems(currentFolder.value.id)
+    } else {
+      fileImportOk.value = false
+      fileImportMessage.value = `导入失败：${r.error || '无法读取文件'}`
+    }
+  } catch (error) {
+    fileImportOk.value = false
+    fileImportMessage.value = `导入失败：${error instanceof Error ? error.message : '无法读取文件'}`
+  } finally {
+    importingFiles.value = false
   }
 }
 
@@ -430,6 +466,7 @@ onMounted(async () => {
   gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
 }
 .items-toolbar h3 { margin: 0; font-size: 15px; }
+.system-folder-note { color: var(--text-3); font-size: 12.5px; }
 
 .item { cursor: pointer; }
 .item:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }

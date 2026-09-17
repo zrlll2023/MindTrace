@@ -7,6 +7,7 @@ import { SecretBox } from './store/secrets'
 import { LLMAdapter } from './adapters/llm'
 import { AppSettings, DEFAULT_SETTINGS } from './types'
 import { resolveDataDir } from './store/data-location'
+import { KnowledgeBase } from './db/knowledge'
 
 /**
  * 应用上下文：数据目录、数据库、密钥盒、LLM 适配器。
@@ -32,6 +33,8 @@ export async function initContext(explicitDataDir?: string): Promise<AppContext>
 
   const db = await initDb(dataDir)
   const repo = new Repo(db, dataDir)
+  new KnowledgeBase(db).ensureRequiredFolders()
+  repo.save()
   const secrets = new SecretBox(dataDir)
 
   const settingsFile = path.join(dataDir, 'settings.json')

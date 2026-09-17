@@ -7,9 +7,9 @@
 启动器**默认从源码构建并运行**，因此打开的永远是最新版本，不会因为 `release/` 里留着旧包而看到过期界面。
 
 工作流程：
-1. 校验 Node.js 可用（`node --version` 有真实输出），并检查 `node_modules/electron` 是否已安装
-2. 用 `scripts/check-stale.mjs` 比对 `dist/` 与源码（`src/`、`electron/`、`index.html`、`vite.config.mts`、`package.json`）的修改时间
-   - 源码更新或 `dist/` 不存在 → 先构建（`pnpm build`；pnpm 不可用时自动退回直接调用本地 `vite` / `tsc`）
+1. 检查仓库内的 `node_modules/electron` 是否已安装
+2. 使用 Electron 内置的 Node.js 执行 `scripts/check-stale.mjs`，比对 `dist/` 与源码（`src/`、`electron/`、`index.html`、`vite.config.mts`、`package.json`）的修改时间
+   - 源码更新或 `dist/` 不存在 → 直接调用本地 `vite` / `tsc` 构建，不依赖系统 Node 或 NVM
    - 已是最新 → 跳过编译，直接启动
 3. 启动 Electron 加载 `dist/index.html`，随后启动器窗口自行关闭
 
@@ -31,7 +31,7 @@
 
 以 `--packaged` 打开免安装版时不会自动启动 Mock AI；需要 AI 功能时，请在设置页选择 DeepSeek 等真实提供商并填写对应 API Key。
 
-> 前提：Node.js 22.12+ 已安装并处于活动状态（Vite 8.3.0 要求 Node.js `^20.19.0 || >=22.12.0`）。仅能在 PATH 中找到 NVM shim 不代表 Node.js 可用；启动器也会隔离某些 NVM shim 对批处理标准输入的错误读取。
+> 前提：项目依赖已经安装并存在 `node_modules/electron`。默认源码启动使用 Electron 内置 Node.js，不要求 NVM 当前已激活。
 > 若 Node.js 不可用但存在免安装版，启动器会退回打开免安装版并提示其可能不是最新。
 
 > `release/` 已被 Git 忽略，GitHub 新克隆的项目不会包含免安装正式版；这种情况下必须先配置 Node.js 并执行 `pnpm install`（或 `npm install`）。

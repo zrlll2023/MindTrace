@@ -1,5 +1,8 @@
 import { Database } from 'sql.js'
 
+export const AI_QUICK_CAPTURE_FOLDER_KEY = 'ai_quick_capture'
+export const AI_QUICK_CAPTURE_FOLDER_NAME = 'AI 快速记录'
+
 /**
  * 知识库数据层（v3）。
  * 文件夹 → 资料条目；条目携带用户的「收录原因」与「感受记录」，以及可选的 AI 总结。
@@ -70,7 +73,20 @@ export class KnowledgeBase {
     return { id, name: defaultName, description: '', system_key: systemKey, created_at: '' }
   }
 
+  ensureRequiredFolders(): KbFolder[] {
+    return [this.ensureSystemFolder(AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME)]
+  }
+
+  getFolder(id: number): KbFolder | null {
+    return this.listFolders().find(folder => folder.id === id) ?? null
+  }
+
+  isAiQuickCaptureFolder(id: number): boolean {
+    return this.getFolder(id)?.system_key === AI_QUICK_CAPTURE_FOLDER_KEY
+  }
+
   renameFolder(id: number, name: string, description?: string): void {
+    if (this.isAiQuickCaptureFolder(id)) throw new Error('AI 快速记录文件夹不允许重命名')
     if (description !== undefined) {
       this.db.run('UPDATE kb_folders SET name = ?, description = ? WHERE id = ?', [name, description, id])
     } else {
@@ -79,6 +95,7 @@ export class KnowledgeBase {
   }
 
   deleteFolder(id: number): void {
+    if (this.isAiQuickCaptureFolder(id)) throw new Error('AI 快速记录文件夹不允许删除')
     this.db.run('DELETE FROM kb_items WHERE folder_id = ?', [id])
     this.db.run('DELETE FROM kb_folders WHERE id = ?', [id])
   }
@@ -103,6 +120,19 @@ export class KnowledgeBase {
   }
 
   addItem(n: NewKbItem): KbItem {
+    if (this.isAiQuickCaptureFolder(n.folderId)) {
+      throw new Error('AI 快速记录文件夹只能通过 AI 快速记录添加内容')
+    }
+    return this.insertItem(n)
+  }
+
+  addItemFromQuickCapture(n: NewKbItem): KbItem {
+    return this.insertItem(n)
+  }
+
+  private insertItem(n: NewKbItem): KbItem {
+    if (!n.title.trim()) throw new Error('标题不能为空')
+    if (!n.body.trim()) throw new Error('资料内容不能为空')
     this.db.run(
       `INSERT INTO kb_items (folder_id, title, source_type, body, file_path, reason, source_entry_id, import_key)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,

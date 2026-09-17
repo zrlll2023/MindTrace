@@ -1,6 +1,6 @@
 import { validateEntryMoment, validateParsedEntry } from './analysis/validators'
 import { CaptureHistory } from './db/capture'
-import { KnowledgeBase } from './db/knowledge'
+import { AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME, KnowledgeBase } from './db/knowledge'
 import { Entry, NewEntry, Repo } from './db/repository'
 
 export interface CaptureChoice {
@@ -65,10 +65,10 @@ export async function commitCaptureEntries(repo: Repo, messageId: number, entrie
       const savedEntry = await repo.insertEntry(newEntry)
       saved.push(savedEntry)
       if (value.kind !== 'sleep' && entry.addToKnowledge) {
-        const folderId = entry.folderId ?? kb.ensureSystemFolder('ai_quick_capture', 'AI 快速记录').id
+        const folderId = entry.folderId ?? kb.ensureSystemFolder(AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME).id
         if (!kb.listFolders().some(folder => folder.id === folderId)) throw new Error('选择的知识库文件夹不存在')
         const body = knowledgeText(value.content, raw)
-        kb.addItem({
+        kb.addItemFromQuickCapture({
           folderId,
           title: knowledgeTitle(value.kind, body),
           sourceType: 'entry',

@@ -6,7 +6,7 @@ import { desensitizeText } from '../analysis/desensitize'
 import { NewEntry } from '../db/repository'
 import { TimelineFilter } from '../types'
 import { CaptureHistory } from '../db/capture'
-import { KnowledgeBase } from '../db/knowledge'
+import { AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME, KnowledgeBase } from '../db/knowledge'
 import { ProfileStore } from '../db/profile'
 import { inspectMigration, migrateData, previousDataDir } from '../store/data-location'
 import { CaptureChoice, commitCaptureEntries } from '../capture-commit'
@@ -201,7 +201,7 @@ export function registerIpcHandlers(): void {
       const profile = new ProfileStore(c.repo.getDb()).values()
       const result = await parseCaptureWith(llm, outgoing, prior, profile)
       const msg = history.add('assistant', '我解析出了以下内容，请确认：', { parsed: result.entries, profileDraft: result.profileDraft })
-      const folder = new KnowledgeBase(c.repo.getDb()).ensureSystemFolder('ai_quick_capture', 'AI 快速记录')
+      const folder = new KnowledgeBase(c.repo.getDb()).ensureSystemFolder(AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME)
       c.repo.save()
       return { ok: true, message: msg, defaultFolderId: folder.id }
     } catch (e) {
@@ -547,6 +547,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('kb:renameFolder', (_e, id: number, name: string, description?: string) => {
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
     const kb = new KnowledgeBase(getContext().repo.getDb())
+    if (kb.isAiQuickCaptureFolder(id)) return { ok: false, error: 'AI 快速记录文件夹不允许重命名' }
     kb.renameFolder(id, name.trim(), description)
     getContext().repo.save()
     return { ok: true }
@@ -555,6 +556,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('kb:deleteFolder', (_e, id: number) => {
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
     const kb = new KnowledgeBase(getContext().repo.getDb())
+    if (kb.isAiQuickCaptureFolder(id)) return { ok: false, error: 'AI 快速记录文件夹不允许删除' }
     kb.deleteFolder(id)
     getContext().repo.save()
     return { ok: true }
@@ -577,6 +579,11 @@ export function registerIpcHandlers(): void {
       const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
       const kb = new KnowledgeBase(c.repo.getDb())
       if (!meta.title.trim()) return { ok: false, error: '标题不能为空' }
+      if (!body.trim()) return { ok: false, error: '资料内容不能为空' }
+      if (!kb.getFolder(folderId)) return { ok: false, error: '文件夹不存在' }
+      if (kb.isAiQuickCaptureFolder(folderId)) {
+        return { ok: false, error: 'AI 快速记录文件夹只能通过 AI 快速记录添加内容' }
+      }
       const item = kb.addItem({
         folderId,
         title: meta.title.trim().slice(0, 200),
@@ -632,68 +639,61 @@ export function registerIpcHandlers(): void {
   /** AI 按文件夹内容延伸（用户点击按钮触发） */
   ipcMain.handle('kb:extend', async (_e, folderId: number) => {
     const c = getContext()
-    const llm = c.getLlm()
-    if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
     const kb = new KnowledgeBase(c.repo.getDb())
     const folders = kb.listFolders()
     const folder = folders.find(f => f.id === folderId)
     if (!folder) return { ok: false, error: '文件夹不存在' }
+    if (folder.system_key === AI_QUICK_CAPTURE_FOLDER_KEY) {
+      return { ok: false, error: 'AI 快速记录文件夹不支持 AI 延伸' }
+    }
+    const llm = c.getLlm()
+    if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
     const { extendFolder } = await import('../knowledge/ai.js')
     return extendFolder(kb, folder.name, kb.listItems(folderId), llm)
   })
 
   /** 文件导入：主进程弹文件对话框 + 纯 JS 解析（支持 markdown/txt/docx/pptx/xlsx/html） */
-  ipcMain.handle('kb:importFiles', async (_e, folderId: number, reason?: string) => {
+  ipcMain.handle('kb:importFiles', async (event, folderId: number, reason?: string) => {
     const c = getContext()
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(c.repo.getDb())
+    if (!kb.getFolder(folderId)) return { ok: false, error: '文件夹不存在', imported: 0, failures: [] }
+    if (kb.isAiQuickCaptureFolder(folderId)) {
+      return { ok: false, error: 'AI 快速记录文件夹不支持导入文件', imported: 0, failures: [] }
+    }
     const { dialog } = require('electron') as typeof import('electron')
-    const r = await dialog.showOpenDialog({
+    const owner = BrowserWindow.fromWebContents(event.sender)
+    const options: Electron.OpenDialogOptions = {
       title: '选择要收入知识库的文件',
       properties: ['openFile', 'multiSelections'],
       filters: [
         { name: '支持的文件', extensions: ['md', 'markdown', 'txt', 'html', 'htm', 'docx', 'pptx', 'xlsx'] }
       ]
-    })
-    if (r.canceled || !r.filePaths.length) return { ok: true, imported: 0, items: [] }
-    const fs = require('node:fs') as typeof import('node:fs')
-    const path = require('node:path') as typeof import('node:path')
-    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
-    const { unzipOffice, extractText } = await import('../import/office.js')
-    const kb = new KnowledgeBase(c.repo.getDb())
-    const items: unknown[] = []
-    for (const p of r.filePaths) {
-      try {
-        const ext = path.extname(p).toLowerCase().replace('.', '')
-        const sourceType = ext === 'markdown' ? 'markdown' : ext
-        let body = ''
-        if (ext === 'docx' || ext === 'pptx' || ext === 'xlsx') {
-          body = extractText(ext, unzipOffice(new Uint8Array(fs.readFileSync(p))))
-        } else {
-          body = fs.readFileSync(p, 'utf8')
-          if (ext === 'html' || ext === 'htm') {
-            body = body
-              .replace(/<script[\s\S]*?<\/script>/gi, '')
-              .replace(/<style[\s\S]*?<\/style>/gi, '')
-              .replace(/<[^>]*>/g, '\n')
-              .replace(/\n{3,}/g, '\n\n')
-              .trim()
-          }
-        }
-        const item = kb.addItem({
-          folderId,
-          title: path.basename(p, path.extname(p)),
-          sourceType,
-          body,
-          filePath: p,
-          reason: reason?.trim() ?? ''
-        })
-        items.push(item)
-      } catch {
-        // 单个文件失败不阻断其余导入
+    }
+    const r = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options)
+    if (r.canceled || !r.filePaths.length) {
+      return { ok: true, canceled: true, imported: 0, items: [], failures: [] }
+    }
+    const { importKnowledgeFiles } = await import('../knowledge/import-files.js')
+    const result = importKnowledgeFiles(kb, folderId, r.filePaths, reason)
+    if (result.items.length) c.repo.save()
+    if (!result.items.length && result.failures.length) {
+      return {
+        ok: false,
+        error: result.failures.map(failure => `${failure.fileName}：${failure.error}`).join('；'),
+        imported: 0,
+        items: [],
+        failures: result.failures
       }
     }
-    c.repo.save()
-    return { ok: true, imported: items.length, items }
+    return {
+      ok: true,
+      canceled: false,
+      imported: result.items.length,
+      items: result.items,
+      failures: result.failures
+    }
   })
 
   // ---------- labs（v3 实验性功能） ----------

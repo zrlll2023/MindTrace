@@ -4,16 +4,19 @@ import { KnowledgeBase } from '../../electron/db/knowledge'
 import { extractText } from '../../electron/import/office'
 
 describe('知识库存储', () => {
-  it('按 system_key 复用系统文件夹，改名后仍不重复创建', async () => {
+  it('初始化并保护 AI 快速记录系统文件夹', async () => {
     const db = await initDb(':memory:')
     const kb = new KnowledgeBase(db)
-    const first = kb.ensureSystemFolder('ai_quick_capture', 'AI 快速记录')
-    kb.renameFolder(first.id, '我的 AI 记录')
-    const second = kb.ensureSystemFolder('ai_quick_capture', 'AI 快速记录')
+    const first = kb.ensureRequiredFolders()[0]
+    const second = kb.ensureRequiredFolders()[0]
     expect(second.id).toBe(first.id)
-    expect(second.name).toBe('我的 AI 记录')
-    kb.deleteFolder(first.id)
-    expect(kb.ensureSystemFolder('ai_quick_capture', 'AI 快速记录').id).not.toBe(first.id)
+    expect(second.name).toBe('AI 快速记录')
+    expect(() => kb.renameFolder(first.id, '我的 AI 记录')).toThrow('不允许重命名')
+    expect(() => kb.deleteFolder(first.id)).toThrow('不允许删除')
+    expect(() => kb.addItem({ folderId: first.id, title: '手动资料', sourceType: 'markdown', body: '内容' }))
+      .toThrow('只能通过 AI 快速记录')
+    expect(kb.addItemFromQuickCapture({ folderId: first.id, title: 'AI 记录', sourceType: 'entry', body: '内容' }).id)
+      .toBeGreaterThan(0)
   })
   it('文件夹：创建/重命名/删除（级联删条目）', async () => {
     const db = await initDb(':memory:')
@@ -57,6 +60,14 @@ describe('知识库存储', () => {
     const item = kb.addItem({ folderId: f.id, title: 't', sourceType: 'markdown', body: 'b' })
     kb.deleteItem(item.id)
     expect(kb.getItem(item.id)).toBeNull()
+  })
+
+  it('拒绝创建标题或内容为空的资料', async () => {
+    const db = await initDb(':memory:')
+    const kb = new KnowledgeBase(db)
+    const folder = kb.addFolder('阅读')
+    expect(() => kb.addItem({ folderId: folder.id, title: '', sourceType: 'markdown', body: '正文' })).toThrow('标题不能为空')
+    expect(() => kb.addItem({ folderId: folder.id, title: '标题', sourceType: 'markdown', body: '  ' })).toThrow('资料内容不能为空')
   })
 })
 

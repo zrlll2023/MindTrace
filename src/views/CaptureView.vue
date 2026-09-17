@@ -87,7 +87,7 @@
           <div v-if="manualToKnowledge" class="row knowledge-fields">
             <select v-if="!manualNewFolder" v-model.number="manualFolderId" class="grow">
               <option :value="0" disabled>选择文件夹</option>
-              <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+              <option v-for="f in manualFolders" :key="f.id" :value="f.id">{{ f.name }}</option>
             </select>
             <input v-else v-model="manualNewFolderName" class="grow" placeholder="新文件夹名称" />
             <button class="secondary small" type="button" @click="manualNewFolder = !manualNewFolder">
@@ -202,6 +202,7 @@ const listEl = ref<HTMLElement>()
 const mode = ref<'manual' | 'ai'>('manual')
 interface Folder { id: number; name: string; system_key?: string | null }
 const folders = ref<Folder[]>([])
+const manualFolders = computed(() => folders.value.filter(folder => folder.system_key !== 'ai_quick_capture'))
 
 // ---------- 手动录入 ----------
 const manualKind = ref<EntryKind>('event')
@@ -350,8 +351,10 @@ async function loadFolders(): Promise<void> {
   const aiFolder = folders.value.find(f => f.system_key === 'ai_quick_capture')
   if (aiFolder) {
     store.defaultFolderId = aiFolder.id
-    if (!manualFolderId.value) manualFolderId.value = aiFolder.id
     for (const m of store.messages) for (const p of m.parsed ?? []) if (p.kind !== 'sleep' && !p.folderId) p.folderId = aiFolder.id
+  }
+  if (!manualFolders.value.some(folder => folder.id === manualFolderId.value)) {
+    manualFolderId.value = manualFolders.value[0]?.id ?? 0
   }
 }
 
