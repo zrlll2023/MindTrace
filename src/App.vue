@@ -107,6 +107,15 @@ const closeWindow = () => window.api.windowControls.close()
 const updateState = ref<UpdateState | null>(null)
 let stopUpdateListener: (() => void) | undefined
 
+function reportWindowError(event: ErrorEvent): void {
+  window.api.diagnostics.reportRendererError(`${event.message}\n${event.error?.stack ?? ''}`)
+}
+
+function reportUnhandledRejection(event: PromiseRejectionEvent): void {
+  const reason = event.reason instanceof Error ? `${event.reason.message}\n${event.reason.stack ?? ''}` : String(event.reason)
+  window.api.diagnostics.reportRendererError(reason)
+}
+
 const hasUpdate = computed(() => ['available', 'downloading', 'downloaded', 'error'].includes(updateState.value?.phase ?? ''))
 const canRequestUpdate = computed(() => ['available', 'downloaded', 'error'].includes(updateState.value?.phase ?? ''))
 const updateButtonText = computed(() => hasUpdate.value
@@ -136,10 +145,16 @@ async function requestUpdate(): Promise<void> {
 }
 
 onMounted(async () => {
+  window.addEventListener('error', reportWindowError)
+  window.addEventListener('unhandledrejection', reportUnhandledRejection)
   stopUpdateListener = window.api.updater.onState((state: UpdateState) => { updateState.value = state })
   updateState.value = await window.api.updater.getState()
 })
-onBeforeUnmount(() => stopUpdateListener?.())
+onBeforeUnmount(() => {
+  window.removeEventListener('error', reportWindowError)
+  window.removeEventListener('unhandledrejection', reportUnhandledRejection)
+  stopUpdateListener?.()
+})
 
 const ORDER_KEY = 'mt-nav-order'
 const movableRoutes = routes.filter(r => r.meta?.nav && r.path !== '/settings')

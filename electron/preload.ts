@@ -26,6 +26,8 @@ const api = {
     clearExportDir: () => ipcRenderer.invoke('settings:clearExportDir'),
     inspectDataMigration: (target: string) => ipcRenderer.invoke('settings:inspectDataMigration', target),
     migrateData: (target: string) => ipcRenderer.invoke('settings:migrateData', target),
+    undoDataMigration: () => ipcRenderer.invoke('settings:undoDataMigration'),
+    restoreDefaultDataDir: () => ipcRenderer.invoke('settings:restoreDefaultDataDir'),
     restart: () => ipcRenderer.invoke('settings:restart'),
     getPresets: () => ipcRenderer.invoke('settings:getPresets')
   },
@@ -105,7 +107,16 @@ const api = {
   labs: {
     metrics: (dateFrom: string, dateTo: string) => ipcRenderer.invoke('labs:metrics', dateFrom, dateTo),
     planResearch: () => ipcRenderer.invoke('labs:planResearch'),
-    saveFinding: (text: string, from: string) => ipcRenderer.invoke('labs:saveFinding', text, from)
+    saveFinding: (text: string, from: string) => ipcRenderer.invoke('labs:saveFinding', text, from),
+    getResearchDraft: () => ipcRenderer.invoke('labs:getResearchDraft'),
+    saveResearchDraft: (draft: unknown) => ipcRenderer.invoke('labs:saveResearchDraft', draft),
+    clearResearchDraft: () => ipcRenderer.invoke('labs:clearResearchDraft')
+  },
+  diagnostics: {
+    openLogs: () => ipcRenderer.invoke('diagnostics:openLogs'),
+    export: () => ipcRenderer.invoke('diagnostics:export'),
+    clear: () => ipcRenderer.invoke('diagnostics:clear'),
+    reportRendererError: (message: string) => ipcRenderer.send('diagnostics:rendererError', message)
   },
 }
 

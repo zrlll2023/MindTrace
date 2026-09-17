@@ -7,6 +7,7 @@ import { runBackup } from './store/backup'
 import fs from 'node:fs'
 import { dataLocationStatus } from './store/data-location'
 import { initializeUpdater, startUpdaterChecks } from './updater'
+import { initializeLogger, logError, logInfo } from './logger'
 
 async function createWindow() {
   const dark = nativeTheme.shouldUseDarkColors
@@ -30,6 +31,12 @@ async function createWindow() {
     win.focus()
     if (process.platform === 'win32') app.focus({ steal: true }) // 从启动它的控制台手中抢回焦点
   })
+  win.webContents.on('render-process-gone', (_event, details) => {
+    logError('renderer.process-gone', `${details.reason} (exit ${details.exitCode})`)
+  })
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    logError('renderer.load-failed', `${errorCode}: ${errorDescription}`)
+  })
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
@@ -38,6 +45,9 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  initializeLogger()
+  process.on('uncaughtException', error => logError('process.uncaught-exception', error))
+  process.on('unhandledRejection', reason => logError('process.unhandled-rejection', reason))
   Menu.setApplicationMenu(null)
   const location = dataLocationStatus(app.getPath('userData'))
   let explicitDataDir: string | undefined
@@ -51,6 +61,7 @@ app.whenReady().then(async () => {
     })
     if (!canUsePrevious || choice !== 0) { app.quit(); return }
     explicitDataDir = location.previousDir!
+    logInfo('data.fallback-to-previous')
   }
   const ctx = await initContext(explicitDataDir)
   registerIpcHandlers()
@@ -80,7 +91,7 @@ app.whenReady().then(async () => {
       search: ctx.getSearch(),
       semantic
     })
-  })()
+  })().catch(error => logError('background.startup-tasks.failed', error))
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

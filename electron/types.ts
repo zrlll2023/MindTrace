@@ -64,6 +64,16 @@ export type ProfileValues = Partial<Record<ProfileKey, string>>
 
 export type SearchProvider = 'none' | 'tavily' | 'bocha'
 
+export interface ResearchPlanDraft {
+  weekKey: string
+  queries: string[]
+  note: string
+  finding: string
+  findingFrom: string
+  generatedAt: string
+  updatedAt: string
+}
+
 export interface AppSettings {
   providerId: string
   baseUrl: string

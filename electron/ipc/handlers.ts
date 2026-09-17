@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { getContext } from '../context'
-import { AppSettings, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues } from '../types'
+import { AppSettings, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues, ResearchPlanDraft } from '../types'
 import { parseCaptureWith } from '../analysis/parser'
 import { desensitizeText } from '../analysis/desensitize'
 import { NewEntry } from '../db/repository'
@@ -8,8 +8,19 @@ import { TimelineFilter } from '../types'
 import { CaptureHistory } from '../db/capture'
 import { AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME, KnowledgeBase } from '../db/knowledge'
 import { ProfileStore } from '../db/profile'
-import { inspectMigration, migrateData, previousDataDir } from '../store/data-location'
+import {
+  dataLocationStatus,
+  defaultDataDir,
+  inspectMigration,
+  migrateData,
+  previousDataDir,
+  refreshScheduledMigration,
+  restoreDefaultDataDir,
+  undoScheduledMigration
+} from '../store/data-location'
 import { CaptureChoice, commitCaptureEntries } from '../capture-commit'
+import { clearResearchDraft, getResearchDraft, researchWeekKey, saveResearchDraft } from '../store/research-draft'
+import { buildDiagnosticArchive, clearDiagnosticLogs, logError, logInfo, logsDirectory } from '../logger'
 
 interface KnowledgeChoice { addToKnowledge?: boolean; folderId?: number; newFolderName?: string; reason?: string }
 type SleepMode = 'session' | 'daily_total' | 'legacy'
@@ -93,12 +104,16 @@ export function registerIpcHandlers(): void {
   // ---------- settings ----------
   ipcMain.handle('settings:get', () => {
     const c = getContext()
+    const userDataDir = app.getPath('userData')
+    const location = dataLocationStatus(userDataDir)
     return {
       settings: c.getSettings(),
       hasApiKey: c.secrets.get('llm_api_key') != null,
       hasSearchKey: c.secrets.get('search_api_key') != null,
       dataDir: c.dataDir,
-      previousDataDir: previousDataDir(app.getPath('userData'))
+      defaultDataDir: defaultDataDir(userDataDir),
+      previousDataDir: previousDataDir(userDataDir),
+      pendingDataDir: location.configuredDir && location.configuredDir !== c.dataDir ? location.configuredDir : null
     }
   })
 
@@ -150,13 +165,79 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('settings:inspectDataMigration', (_e, target: string) => inspectMigration(getContext().dataDir, target))
   ipcMain.handle('settings:migrateData', (_e, target: string) => {
     const c = getContext()
-    c.repo.save()
-    migrateData(c.dataDir, target, app.getPath('userData'))
-    return { ok: true, requiresRestart: true }
+    try {
+      c.repo.save()
+      migrateData(c.dataDir, target, app.getPath('userData'))
+      logInfo('data.migration.ready', { targetName: target.split(/[\\/]/).pop() ?? '' })
+      return { ok: true, requiresRestart: true }
+    } catch (error) {
+      logError('data.migration.failed', error)
+      return { ok: false, error: (error as Error).message }
+    }
   })
-  ipcMain.handle('settings:restart', () => { app.relaunch(); app.exit(0) })
+  ipcMain.handle('settings:undoDataMigration', () => {
+    const canceledTarget = undoScheduledMigration(getContext().dataDir, app.getPath('userData'))
+    logInfo('data.migration.undone', { hadPendingMigration: !!canceledTarget })
+    return { ok: true, canceledTarget }
+  })
+  ipcMain.handle('settings:restoreDefaultDataDir', () => {
+    const c = getContext()
+    try {
+      c.repo.save()
+      const result = restoreDefaultDataDir(c.dataDir, app.getPath('userData'))
+      logInfo('data.default-restore.ready', { archivedPreviousDefault: !!result.archivedDir })
+      return { ok: true, requiresRestart: true, ...result }
+    } catch (error) {
+      logError('data.default-restore.failed', error)
+      return { ok: false, error: (error as Error).message }
+    }
+  })
+  ipcMain.handle('settings:restart', () => {
+    const c = getContext()
+    try {
+      c.repo.save()
+      refreshScheduledMigration(c.dataDir, app.getPath('userData'))
+      app.relaunch()
+      app.exit(0)
+      return { ok: true }
+    } catch (error) {
+      logError('data.migration.final-sync.failed', error)
+      return { ok: false, error: (error as Error).message }
+    }
+  })
 
   ipcMain.handle('settings:getPresets', () => PROVIDER_PRESETS)
+
+  ipcMain.handle('diagnostics:openLogs', async () => {
+    const error = await shell.openPath(logsDirectory())
+    return error ? { ok: false, error } : { ok: true }
+  })
+  ipcMain.handle('diagnostics:export', async event => {
+    const owner = senderWindow(event)
+    const date = new Date().toISOString().slice(0, 10)
+    const options: Electron.SaveDialogOptions = {
+      title: '导出 MindTrace 诊断包',
+      defaultPath: `MindTrace-diagnostics-${date}.zip`,
+      filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }]
+    }
+    const result = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    try {
+      const fs = await import('node:fs')
+      fs.writeFileSync(result.filePath, Buffer.from(buildDiagnosticArchive()))
+      return { ok: true, canceled: false, path: result.filePath }
+    } catch (error) {
+      logError('diagnostics.export.failed', error)
+      return { ok: false, canceled: false, error: (error as Error).message }
+    }
+  })
+  ipcMain.handle('diagnostics:clear', () => {
+    clearDiagnosticLogs()
+    return { ok: true }
+  })
+  ipcMain.on('diagnostics:rendererError', (_event, message: string) => {
+    logError('renderer.unhandled', message)
+  })
 
   // ---------- llm ----------
   ipcMain.handle('llm:listModels', async (_e, baseUrl?: string, apiKey?: string) => {
@@ -719,10 +800,42 @@ export function registerIpcHandlers(): void {
       }).filter(Boolean)
       const { planResearch } = await import('../analysis/labs.js')
       const plan = await planResearch(llm, threads.map(t => t.title), ideas)
-      return { ok: true, ...plan }
+      const weekKey = researchWeekKey()
+      const existing = await getResearchDraft(c.repo, weekKey)
+      const saved = await saveResearchDraft(c.repo, {
+        weekKey,
+        ...plan,
+        finding: existing?.finding ?? '',
+        findingFrom: existing?.findingFrom ?? '',
+        generatedAt: new Date().toISOString()
+      })
+      return { ok: true, ...saved }
     } catch (e) {
+      logError('labs.plan.failed', e)
       return { ok: false, error: (e as Error).message, queries: [], note: '' }
     }
+  })
+
+  ipcMain.handle('labs:getResearchDraft', async () => {
+    const weekKey = researchWeekKey()
+    return { ok: true, weekKey, draft: await getResearchDraft(getContext().repo, weekKey) }
+  })
+
+  ipcMain.handle('labs:saveResearchDraft', async (_e, draft: Partial<ResearchPlanDraft>) => {
+    try {
+      const weekKey = researchWeekKey()
+      const saved = await saveResearchDraft(getContext().repo, { ...draft, weekKey })
+      return { ok: true, draft: saved }
+    } catch (error) {
+      logError('labs.draft-save.failed', error)
+      return { ok: false, error: (error as Error).message }
+    }
+  })
+
+  ipcMain.handle('labs:clearResearchDraft', async () => {
+    const c = getContext()
+    await clearResearchDraft(c.repo, researchWeekKey())
+    return { ok: true }
   })
 
   ipcMain.handle('labs:saveFinding', (_e, text: string, from: string) => {

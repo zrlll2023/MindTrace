@@ -7,7 +7,9 @@ export interface SettingsPayload {
   hasApiKey: boolean
   hasSearchKey: boolean
   dataDir: string
+  defaultDataDir: string
   previousDataDir: string | null
+  pendingDataDir: string | null
 }
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -16,7 +18,9 @@ export const useSettingsStore = defineStore('settings', () => {
     hasApiKey: false,
     hasSearchKey: false,
     dataDir: '',
-    previousDataDir: null
+    defaultDataDir: '',
+    previousDataDir: null,
+    pendingDataDir: null
   })
   const presets = ref<ProviderPreset[]>([])
   const loading = ref(false)
