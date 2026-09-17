@@ -42,7 +42,7 @@
 pnpm dist
 ```
 
-产出 `release/MindTrace-Setup-0.3.0.exe` → 双击安装 → 桌面出现 **MindTrace** 图标，以后点图标即开。
+产出 `release/MindTrace-Setup-0.4.0.exe` → 双击安装 → 桌面出现 **MindTrace** 图标，以后点图标即开。
 
 安装版配置真实 AI 时：设置页选 DeepSeek 等预设 → 填真实 Key。想体验完整功能（含联网搜索推荐）可再去 tavily.com 免费申请一个搜索 Key。
 

@@ -120,7 +120,7 @@ const hasUpdate = computed(() => ['available', 'downloading', 'downloaded', 'err
 const canRequestUpdate = computed(() => ['available', 'downloaded', 'error'].includes(updateState.value?.phase ?? ''))
 const updateButtonText = computed(() => hasUpdate.value
   ? '更新到最新版本'
-  : `已是最新版本 v${updateState.value?.currentVersion ?? '0.3.0'}`)
+  : `已是最新版本 v${updateState.value?.currentVersion ?? '0.4.0'}`)
 const updateButtonTitle = computed(() => {
   if (updateState.value?.phase === 'available') return `下载 MindTrace v${updateState.value.latestVersion}`
   if (updateState.value?.phase === 'downloaded') return '重启并安装已下载的更新'
