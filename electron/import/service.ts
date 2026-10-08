@@ -80,15 +80,23 @@ export async function importConversations(
       const found = db.exec('SELECT id FROM kb_items WHERE import_key = ?', [key])
       if (found.length) { skipped++; continue }
       const body = conversationMarkdown(conv)
-      const item = kb.addItem({ folderId: folder.id, title: conv.title.slice(0, 200), sourceType: 'ai-conversation', body, importKey: key })
       const excerpt = conv.messages.find(m => m.role === 'user')?.content.replace(/\s+/g, ' ').slice(0, 160) ?? ''
       const summary = `导入 ${conv.source === 'chatgpt' ? 'ChatGPT' : 'Claude'} 会话《${conv.title}》，共 ${conv.messages.length} 条消息。${excerpt}`
       const entry: NewEntry = {
         raw_text: summary, kind: 'conversation', confidence: 1, source: `import:${conv.source}`,
         entry_date: conv.date, dedup_key: `conversation:${key}`,
-        content: JSON.stringify({ text: summary, conversation: conv.title, messageCount: conv.messages.length, kbItemId: item.id })
+        content: JSON.stringify({ text: summary, conversation: conv.title, messageCount: conv.messages.length })
       }
-      await repo.insertEntry(entry)
+      const savedEntry = await repo.insertEntry(entry)
+      // source_entry_id 才是记录与资料之间的可信关联；资料由这条时间线摘要条目收录而来，数据层不再另记流水
+      kb.addItem({
+        folderId: folder.id,
+        title: conv.title.slice(0, 200),
+        sourceType: 'ai-conversation',
+        body,
+        importKey: key,
+        sourceEntryId: savedEntry.id
+      })
       imported++
     }
     db.run('COMMIT')

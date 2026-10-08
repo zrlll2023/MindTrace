@@ -3,6 +3,7 @@ import { zipSync, strToU8 } from 'fflate'
 import { parseExportZip } from '../../electron/import/service'
 import { initDb } from '../../electron/db/connection'
 import { Repo } from '../../electron/db/repository'
+import { KnowledgeBase } from '../../electron/db/knowledge'
 import { importConversations } from '../../electron/import/service'
 
 describe('parseExportZip', () => {
@@ -81,6 +82,11 @@ describe('importConversations', () => {
     const all = await repo.listEntries({ kind: 'conversation' })
     expect(all).toHaveLength(1)
     expect(all[0].source).toBe('import:chatgpt')
-    expect(JSON.parse(all[0].content).kbItemId).toBeTypeOf('number')
+    // 跳转依据改由资料侧的 source_entry_id 承担：content 里的自定义键会被内容契约白名单丢弃
+    const linked = new KnowledgeBase(repo.getDb()).findItemsForEntries([all[0].id])
+    expect(linked).toHaveLength(1)
+    expect(linked[0].title).toBe('RAG 讨论')
+    // 该路径已写入时间线摘要条目，不再另记收录流水，否则同一天出现两行
+    expect(await repo.listTimeline({ record: 'knowledge' })).toHaveLength(0)
   })
 })

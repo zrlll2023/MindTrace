@@ -1,8 +1,11 @@
 import { Database } from 'sql.js'
+import { HideScope } from '../types'
 import { isFtsAvailable, persistDb } from './connection'
 
 export type EntryKind = 'sleep' | 'event' | 'conversation' | 'quote' | 'idea' | 'other'
 export type ReportType = 'daily' | 'weekly'
+/** 时间线上的三类行：记录条目、知识库操作流水、归档对话会话 */
+export type HiddenTarget = 'entry' | 'knowledge' | 'session'
 
 export interface NewEntry {
   raw_text: string
@@ -31,6 +34,28 @@ export interface EntryFilter {
   kind?: EntryKind
   limit?: number
   offset?: number
+  /** 连被时间线隐去的记录一起返回：睡眠同日冲突检查需要看全 */
+  includeHidden?: boolean
+}
+
+/** 时间线合并行：record_type 区分记录条目与知识库操作流水 */
+export interface TimelineRow {
+  record_type: 'entry' | 'knowledge'
+  id: number
+  event_date: string
+  event_time: string | null
+  created_at: string
+  hidden_scope: string | null
+  raw_text: string | null
+  kind: string | null
+  content: string | null
+  confidence: number | null
+  source: string | null
+  item_id: number | null
+  folder_id: number | null
+  action: string | null
+  item_title: string | null
+  detail: string | null
 }
 
 export interface NewReport {
@@ -147,12 +172,12 @@ export class Repo {
     return out
   }
 
-  /** 按 id 批量取条目（语义搜索结果关联用） */
+  /** 按 id 批量取条目（语义搜索结果关联用）；隐去范围为 all/listing 的不再出现在搜索命中里 */
   async getEntriesByIds(ids: number[]): Promise<Entry[]> {
     if (!ids.length) return []
     const placeholders = ids.map(() => '?').join(',')
     const res = this.db.exec(
-      `SELECT * FROM entries WHERE id IN (${placeholders})`,
+      `SELECT * FROM entries WHERE id IN (${placeholders}) AND (hidden_scope IS NULL OR hidden_scope = 'timeline')`,
       ids
     )
     if (!res.length) return []
@@ -164,6 +189,8 @@ export class Repo {
   async listEntries(filter: EntryFilter): Promise<Entry[]> {
     const where: string[] = []
     const params: (string | number)[] = []
+    // 报告、趋势与 AI 取数只隐去 all 范围；冲突检查需要看全，由 includeHidden 放开
+    if (!filter.includeHidden) where.push("(hidden_scope IS NULL OR hidden_scope <> 'all')")
     if (filter.dateFrom) {
       where.push('entry_date >= ?')
       params.push(filter.dateFrom)
@@ -193,6 +220,91 @@ export class Repo {
     )
   }
 
+  /**
+   * 时间线单一游标分页：记录条目与知识库操作流水合成一条流。
+   * 分两次查询再前端拼接会让「只有知识操作、没写记录的那一天」永远不出现在分组里。
+   */
+  async listTimeline(
+    filter: EntryFilter & { record?: 'entry' | 'knowledge'; showHidden?: boolean }
+  ): Promise<TimelineRow[]> {
+    const branches: string[] = []
+    const params: (string | number)[] = []
+    const wantEntries = filter.record !== 'knowledge'
+    // 按记录类型筛选时不混入流水，与对话条目在类型筛选下同样被排除的既有行为一致
+    const wantEvents = filter.record === 'knowledge' || (filter.record !== 'entry' && !filter.kind)
+    // 时间线默认只见未隐去的行；showHidden 反转为「已隐去」回收视图，供逐行恢复
+    const visibility = filter.showHidden ? 'hidden_scope IS NOT NULL' : 'hidden_scope IS NULL'
+
+    if (wantEntries) {
+      const where: string[] = [visibility]
+      if (filter.dateFrom) {
+        where.push('entry_date >= ?')
+        params.push(filter.dateFrom)
+      }
+      if (filter.dateTo) {
+        where.push('entry_date <= ?')
+        params.push(filter.dateTo)
+      }
+      if (filter.kind) {
+        where.push('kind = ?')
+        params.push(filter.kind)
+      }
+      branches.push(`SELECT 'entry' AS record_type, id, entry_date AS event_date, entry_time AS event_time, created_at,
+          hidden_scope,
+          raw_text, kind, content, confidence, source,
+          NULL AS item_id, NULL AS folder_id, NULL AS action, NULL AS item_title, NULL AS detail
+        FROM entries WHERE ${where.join(' AND ')}`)
+    }
+
+    if (wantEvents) {
+      const where: string[] = [visibility]
+      if (filter.dateFrom) {
+        where.push('event_date >= ?')
+        params.push(filter.dateFrom)
+      }
+      if (filter.dateTo) {
+        where.push('event_date <= ?')
+        params.push(filter.dateTo)
+      }
+      branches.push(`SELECT 'knowledge' AS record_type, id, event_date, event_time, created_at,
+          hidden_scope,
+          NULL AS raw_text, NULL AS kind, NULL AS content, NULL AS confidence, NULL AS source,
+          item_id, folder_id, action, item_title, detail
+        FROM kb_events WHERE ${where.join(' AND ')}`)
+    }
+
+    if (!branches.length) return []
+    const limit = filter.limit ?? DEFAULT_LIMIT
+    const offset = filter.offset ?? 0
+    // limit/offset 的 ? 排在所有分支条件之后，与 SQL 文本中占位符的出现顺序一致
+    params.push(limit, offset)
+    const sql = `SELECT * FROM (${branches.join(' UNION ALL ')})
+      ORDER BY event_date DESC,
+        CASE WHEN event_time IS NULL OR event_time = '' THEN 1 ELSE 0 END,
+        event_time DESC,
+        created_at DESC,
+        record_type,
+        id DESC
+      LIMIT ? OFFSET ?`
+    const res = this.db.exec(sql, params)
+    if (!res.length) return []
+    return res[0].values.map((_: unknown[], i: number) =>
+      this.valuesToTimelineRow(res[0].columns, res[0].values[i])
+    )
+  }
+
+  /** 已隐去的行数（记录 + 知识流水 + 有消息的会话），用于时间线的已隐藏入口 */
+  async countHidden(): Promise<number> {
+    const res = this.db.exec(`
+      SELECT (SELECT COUNT(*) FROM entries WHERE hidden_scope IS NOT NULL)
+           + (SELECT COUNT(*) FROM kb_events WHERE hidden_scope IS NOT NULL)
+           + (SELECT COUNT(*) FROM capture_sessions s
+              WHERE s.hidden_scope IS NOT NULL
+                AND EXISTS (SELECT 1 FROM capture_messages m WHERE m.session_id = s.id))
+    `)
+    return Number(res[0]?.values[0]?.[0] ?? 0)
+  }
+
   async searchEntries(keyword: string): Promise<Entry[]> {
     if (!keyword.trim()) return []
     if (this.hasFts()) {
@@ -201,7 +313,7 @@ export class Repo {
         const res = this.db.exec(
           `SELECT e.* FROM entries e
            JOIN entries_fts f ON e.id = f.rowid
-           WHERE entries_fts MATCH ?`,
+           WHERE entries_fts MATCH ? AND (e.hidden_scope IS NULL OR e.hidden_scope = 'timeline')`,
           [`"${keyword.replace(/"/g, '""')}"`]
         )
         if (res.length) return res[0].values.map((_: unknown[], i: number) => this.valuesToEntry(res[0].columns, res[0].values[i]))
@@ -212,7 +324,9 @@ export class Repo {
     }
     const like = `%${keyword}%`
     const res = this.db.exec(
-      'SELECT * FROM entries WHERE content LIKE ? OR raw_text LIKE ? ORDER BY created_at DESC LIMIT 200',
+      `SELECT * FROM entries WHERE (content LIKE ? OR raw_text LIKE ?)
+        AND (hidden_scope IS NULL OR hidden_scope = 'timeline')
+       ORDER BY created_at DESC LIMIT 200`,
       [like, like]
     )
     if (!res.length) return []
@@ -243,6 +357,13 @@ export class Repo {
     } catch {
       // vectors 表不存在（旧库未迁移）时忽略
     }
+    this.save()
+  }
+
+  /** 只切换时间线可见性范围，内容一律不动；表名由固定分支映射，不拼接外部输入 */
+  async setHidden(target: HiddenTarget, id: number | string, scope: HideScope | null): Promise<void> {
+    const table = target === 'knowledge' ? 'kb_events' : target === 'session' ? 'capture_sessions' : 'entries'
+    this.db.run(`UPDATE ${table} SET hidden_scope = ? WHERE id = ?`, [scope, id])
     this.save()
   }
 
@@ -336,6 +457,12 @@ export class Repo {
     const obj: Record<string, unknown> = {}
     columns.forEach((c, i) => (obj[c] = values[i]))
     return obj as unknown as Entry
+  }
+
+  private valuesToTimelineRow(columns: string[], values: unknown[]): TimelineRow {
+    const obj: Record<string, unknown> = {}
+    columns.forEach((c, i) => (obj[c] = values[i]))
+    return obj as unknown as TimelineRow
   }
 
   private valuesToReport(columns: string[], values: unknown[]): Report {

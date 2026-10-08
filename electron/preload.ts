@@ -57,8 +57,11 @@ const api = {
     list: (filter: unknown) => ipcRenderer.invoke('timeline:list', filter),
     search: (keyword: string) => ipcRenderer.invoke('timeline:search', keyword),
     get: (id: number) => ipcRenderer.invoke('timeline:get', id),
-    updateContent: (id: number, content: unknown) =>
-      ipcRenderer.invoke('timeline:updateContent', id, content)
+    updateContent: (id: number, content: unknown, moment?: { entryDate?: string; entryTime?: string | null }) =>
+      ipcRenderer.invoke('timeline:updateContent', id, content, moment),
+    setHidden: (target: 'entry' | 'knowledge' | 'session', id: number | string, scope: 'all' | 'listing' | 'timeline' | null) =>
+      ipcRenderer.invoke('timeline:setHidden', target, id, scope),
+    hiddenCount: () => ipcRenderer.invoke('timeline:hiddenCount')
   },
   reports: {
     get: (type: 'daily' | 'weekly', period: string) =>
@@ -99,8 +102,9 @@ const api = {
     deleteFolder: (id: number) => ipcRenderer.invoke('kb:deleteFolder', id),
     listItems: (folderId: number) => ipcRenderer.invoke('kb:listItems', folderId),
     getItem: (id: number) => ipcRenderer.invoke('kb:getItem', id),
-    addItem: (folderId: number, meta: { title: string; sourceType: string; reason?: string }, body: string, filePath?: string) =>
+    addItem: (folderId: number, meta: { title: string; sourceType: string; reason?: string; action?: import('./types').KbAction }, body: string, filePath?: string) =>
       ipcRenderer.invoke('kb:addItem', folderId, meta, body, filePath),
+    findItemsForEntries: (entryIds: number[]) => ipcRenderer.invoke('kb:findItemsForEntries', entryIds),
     updateItem: (id: number, patch: { title?: string; body?: string; reason?: string }) =>
       ipcRenderer.invoke('kb:updateItem', id, patch),
     updateReflection: (id: number, text: string) => ipcRenderer.invoke('kb:updateReflection', id, text),

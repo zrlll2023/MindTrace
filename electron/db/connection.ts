@@ -199,6 +199,27 @@ function migrate(db: Database): void {
     db.run('ALTER TABLE kb_items ADD COLUMN import_key TEXT')
   }
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_items_import_key ON kb_items(import_key) WHERE import_key IS NOT NULL')
+  db.run('CREATE INDEX IF NOT EXISTS idx_kb_items_source_entry ON kb_items(source_entry_id)')
+
+  // ---------- 知识库操作流水（供时间线回溯「哪天动了哪些资料」）----------
+  db.run(`CREATE TABLE IF NOT EXISTS kb_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER,
+    folder_id INTEGER,
+    action TEXT NOT NULL CHECK (action IN ('collect','edit','reflect','summarize','extend','import','delete')),
+    item_title TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT '',
+    event_date TEXT NOT NULL,
+    event_time TEXT,
+    dedup_key TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  )`)
+  db.run('CREATE INDEX IF NOT EXISTS idx_kb_events_date ON kb_events(event_date)')
+  // 实时流水的 dedup_key 必须留 NULL：资料 id 会被 SQLite 复用，若参与唯一约束会静默吞掉新资料的收录事件
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_events_dedup ON kb_events(dedup_key) WHERE dedup_key IS NOT NULL')
+
+  backfillKnowledgeEvents(db)
+  linkImportedKnowledgeItems(db)
 
   db.run(`CREATE TABLE IF NOT EXISTS capture_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -250,4 +271,34 @@ function migrate(db: Database): void {
     source TEXT NOT NULL CHECK (source IN ('manual','ai')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
   )`)
+
+  // 增量迁移：时间线隐去标记（只改变可见性，不删改任何内容；三张会上时间线的表都需要）
+  for (const table of ['entries', 'kb_events', 'capture_sessions']) {
+    const tableCols = db.exec(`PRAGMA table_info(${table})`)
+    if (tableCols.length && !tableCols[0].values.some(v => v[1] === 'hidden_scope')) {
+      db.run(`ALTER TABLE ${table} ADD COLUMN hidden_scope TEXT`)
+    }
+  }
+}
+
+/** 升级前已有的资料没有流水，按其创建/更新时间补写收录与修改事件 */
+function backfillKnowledgeEvents(db: Database): void {
+  db.run(`INSERT OR IGNORE INTO kb_events (item_id, folder_id, action, item_title, event_date, event_time, dedup_key, created_at)
+    SELECT i.id, i.folder_id, 'collect', i.title, substr(i.created_at, 1, 10), substr(i.created_at, 12, 5),
+           'backfill:collect:' || i.id, i.created_at
+    FROM kb_items i
+    WHERE length(i.created_at) >= 16`)
+  db.run(`INSERT OR IGNORE INTO kb_events (item_id, folder_id, action, item_title, event_date, event_time, dedup_key, created_at)
+    SELECT i.id, i.folder_id, 'edit', i.title, substr(i.updated_at, 1, 10), substr(i.updated_at, 12, 5),
+           'backfill:edit:' || i.id, i.updated_at
+    FROM kb_items i
+    WHERE length(i.updated_at) >= 16 AND datetime(i.updated_at) > datetime(i.created_at, '+60 seconds')`)
+}
+
+/** 导入对话生成的记录只在 content 里留了 kbItemId（契约白名单会丢弃），改用 source_entry_id 作为关联真相 */
+function linkImportedKnowledgeItems(db: Database): void {
+  db.run(`UPDATE kb_items SET source_entry_id = (
+      SELECT e.id FROM entries e WHERE e.dedup_key = 'conversation:' || kb_items.import_key
+    )
+    WHERE source_entry_id IS NULL AND import_key IS NOT NULL`)
 }

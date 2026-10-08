@@ -24,6 +24,8 @@ export interface CaptureSession {
   archivedAt: string | null
   messageCount: number
   tokenCount: number
+  /** 时间线隐去范围；null 表示正常显示 */
+  hiddenScope: string | null
 }
 
 const ACTIVE_SESSION_ID = 'default'
@@ -148,7 +150,8 @@ export class CaptureHistory {
     const r = this.db.exec(`
       SELECT s.id, s.title, s.status, s.created_at, s.last_message_at, s.archived_at,
              COUNT(m.id),
-             COALESCE(SUM(CAST(json_extract(m.usage_json, '$.totalTokens') AS INTEGER)), 0)
+             COALESCE(SUM(CAST(json_extract(m.usage_json, '$.totalTokens') AS INTEGER)), 0),
+             s.hidden_scope
       FROM capture_sessions s
       LEFT JOIN capture_messages m ON m.session_id = s.id
       GROUP BY s.id
@@ -166,7 +169,9 @@ export class CaptureHistory {
       lastMessageAt: v[4] != null ? String(v[4]) : null,
       archivedAt: v[5] != null ? String(v[5]) : null,
       messageCount: Number(v[6]),
-      tokenCount: Number(v[7])
+      tokenCount: Number(v[7]),
+      // 记录页仍要能打开被时间线隐去的会话，可见性由时间线自己判
+      hiddenScope: v[8] ? String(v[8]) : null
     }))
   }
 

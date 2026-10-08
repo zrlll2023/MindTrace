@@ -128,6 +128,37 @@ export interface TimelineFilter {
   kind?: EntryKind
   limit?: number
   offset?: number
+  /** 只看记录条目或只看知识库操作流水；缺省时两者按发生时间合并 */
+  record?: 'entry' | 'knowledge'
+  /** 打开后只列出已隐去的行，用于查看与恢复显示 */
+  showHidden?: boolean
+}
+
+/**
+ * 时间线隐去范围：只改变可见性，内容一律原样保留。
+ * all 为默认选择，真正意义上「抹除这件事的存在」但仍可恢复。
+ */
+export type HideScope = 'all' | 'listing' | 'timeline'
+
+export const HIDE_SCOPES: HideScope[] = ['all', 'listing', 'timeline']
+
+export const HIDE_SCOPE_LABELS: Record<HideScope, string> = {
+  all: '所有回溯视图都隐去（时间线、搜索、报告与趋势）',
+  listing: '隐去时间线与搜索，报告与趋势仍统计',
+  timeline: '仅时间线列表隐去，搜索与统计仍算'
+}
+
+/** 知识库操作类型；与 kb_events 的 CHECK 约束保持一致 */
+export type KbAction = 'collect' | 'edit' | 'reflect' | 'summarize' | 'extend' | 'import' | 'delete'
+
+export const KB_ACTION_LABELS: Record<KbAction, string> = {
+  collect: '收录资料',
+  edit: '修改资料',
+  reflect: '写下感受',
+  summarize: 'AI 总结',
+  extend: 'AI 延伸',
+  import: '导入资料',
+  delete: '删除资料'
 }
 
 export interface GenerateReportResult {

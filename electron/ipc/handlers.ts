@@ -1,9 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { getContext } from '../context'
-import { AppSettings, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues, ResearchPlanDraft } from '../types'
+import { AppSettings, HIDE_SCOPES, HideScope, KbAction, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues, ResearchPlanDraft } from '../types'
 import { parseCaptureWith } from '../analysis/parser'
 import { desensitizeText } from '../analysis/desensitize'
-import { NewEntry } from '../db/repository'
+import { HiddenTarget, NewEntry } from '../db/repository'
 import { TimelineFilter } from '../types'
 import { CaptureHistory } from '../db/capture'
 import { AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME, KnowledgeBase } from '../db/knowledge'
@@ -19,6 +19,7 @@ import {
   undoScheduledMigration
 } from '../store/data-location'
 import { CaptureChoice, commitCaptureEntries, undoCaptureCommit } from '../capture-commit'
+import { resolveEntryMoment } from '../timeline-moment'
 import { clearResearchDraft, getResearchDraft, researchWeekKey, saveResearchDraft } from '../store/research-draft'
 import { buildDiagnosticArchive, clearDiagnosticLogs, logError, logInfo, logsDirectory } from '../logger'
 
@@ -31,7 +32,8 @@ function sleepMode(content: Record<string, unknown>): SleepMode {
 
 async function sleepModeConflict(date: string, mode: SleepMode, excludeId?: number): Promise<string | null> {
   if (mode === 'legacy') return null
-  const entries = await getContext().repo.listEntries({ dateFrom: date, dateTo: date, kind: 'sleep', limit: 5000 })
+  // 已隐去的睡眠同样占当天口径，冲突检查必须看全
+  const entries = await getContext().repo.listEntries({ dateFrom: date, dateTo: date, kind: 'sleep', limit: 5000, includeHidden: true })
   const modes = entries
     .filter(entry => entry.id !== excludeId)
     .map(entry => {
@@ -366,13 +368,13 @@ export function registerIpcHandlers(): void {
 
   // ---------- timeline ----------
   ipcMain.handle('timeline:list', (_e, filter: TimelineFilter) =>
-    getContext().repo.listEntries(filter)
+    getContext().repo.listTimeline(filter)
   )
   ipcMain.handle('timeline:search', (_e, keyword: string) =>
     getContext().repo.searchEntries(keyword)
   )
   ipcMain.handle('timeline:get', (_e, id: number) => getContext().repo.getEntry(id))
-  ipcMain.handle('timeline:updateContent', async (_e, id: number, content: object) => {
+  ipcMain.handle('timeline:updateContent', async (_e, id: number, content: object, moment?: { entryDate?: string; entryTime?: string | null }) => {
     const c = getContext()
     const existing = await c.repo.getEntry(id)
     if (!existing) return { ok: false, error: '记录不存在' }
@@ -380,30 +382,33 @@ export function registerIpcHandlers(): void {
     const validated = validateParsedEntry({ kind: existing.kind, content, confidence: existing.confidence })
     if (!validated.ok || !validated.entry) return { ok: false, error: validated.reason ?? '内容校验未通过' }
     const normalized = validated.entry.content
-    let entryDate: string | undefined
-    let entryTime: string | null | undefined
+    const resolved = resolveEntryMoment(existing, normalized, moment)
+    if (!resolved.ok) return { ok: false, error: resolved.error }
     if (existing.kind === 'sleep') {
-      const mode = sleepMode(normalized)
-      entryDate = mode === 'session'
-        ? String(normalized.endAt).slice(0, 10)
-        : mode === 'daily_total' ? String(normalized.date) : existing.entry_date
-      entryTime = mode === 'session' ? String(normalized.endAt).slice(11, 16) : null
-      const conflict = await sleepModeConflict(entryDate, mode, id)
+      const conflict = await sleepModeConflict(resolved.moment.entryDate, sleepMode(normalized), id)
       if (conflict) return { ok: false, error: conflict }
     }
-    await c.repo.updateEntryContent(id, JSON.stringify(normalized), entryDate, entryTime)
-    return { ok: true, content: normalized, entryDate: entryDate ?? existing.entry_date, entryTime: entryTime ?? existing.entry_time }
+    await c.repo.updateEntryContent(id, JSON.stringify(normalized), resolved.moment.entryDate, resolved.moment.entryTime)
+    return { ok: true, content: normalized, entryDate: resolved.moment.entryDate, entryTime: resolved.moment.entryTime }
   })
   ipcMain.handle('timeline:delete', (_e, id: number) => {
     getContext().repo.deleteEntry(id)
     return { ok: true }
   })
+  // 时间线隐去：只切换可见性范围，内容一律保留；scope 为 null 即恢复显示
+  ipcMain.handle('timeline:setHidden', async (_e, target: HiddenTarget, id: number | string, scope: HideScope | null) => {
+    if (target !== 'entry' && target !== 'knowledge' && target !== 'session') return { ok: false, error: '未知的行类型' }
+    if (scope !== null && !HIDE_SCOPES.includes(scope)) return { ok: false, error: '未知的隐去范围' }
+    await getContext().repo.setHidden(target, id, scope)
+    return { ok: true }
+  })
+  ipcMain.handle('timeline:hiddenCount', () => getContext().repo.countHidden())
   // 手动直录（不经 AI）：与 capture:commit 同一契约闸门入库，source=manual
   ipcMain.handle('entries:manual', async (_e, kind: string, content: object, rawText: string, entryDate?: string, knowledge?: KnowledgeChoice) => {
     const c = getContext()
     const db = c.repo.getDb()
     try {
-      const { validateParsedEntry, KIND_VALUES } = require('../analysis/validators.js') as typeof import('../analysis/validators')
+      const { validateParsedEntry, validateEntryMoment, KIND_VALUES } = require('../analysis/validators.js') as typeof import('../analysis/validators')
       if (!KIND_VALUES.includes(kind as never)) {
         return { ok: false, error: `不支持的记录类型：${kind}` }
       }
@@ -418,6 +423,10 @@ export function registerIpcHandlers(): void {
       const normalizedTime = kind === 'sleep' && normalizedContent.recordType === 'session'
         ? String(normalizedContent.endAt).slice(11, 16)
         : undefined
+      if (normalizedDate) {
+        const momentCheck = validateEntryMoment(normalizedDate, normalizedTime ?? null)
+        if (!momentCheck.ok) return { ok: false, error: momentCheck.reason ?? '发生时间无效' }
+      }
       if (kind === 'sleep' && normalizedDate) {
         const conflict = await sleepModeConflict(normalizedDate, sleepMode(normalizedContent))
         if (conflict) return { ok: false, error: conflict }
@@ -718,7 +727,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'kb:addItem',
-    (_e, folderId: number, meta: { title: string; sourceType: string; reason?: string }, body: string, filePath?: string) => {
+    (_e, folderId: number, meta: { title: string; sourceType: string; reason?: string; action?: KbAction }, body: string, filePath?: string) => {
       const c = getContext()
       const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
       const kb = new KnowledgeBase(c.repo.getDb())
@@ -734,12 +743,19 @@ export function registerIpcHandlers(): void {
         sourceType: meta.sourceType || 'markdown',
         body,
         filePath: filePath ?? '',
-        reason: meta.reason?.trim() ?? ''
+        reason: meta.reason?.trim() ?? '',
+        action: meta.action
       })
       c.repo.save()
       return { ok: true, item }
     }
   )
+
+  /** 记录条目 → 知识资料的反向关联（时间线判断能否跳转知识库） */
+  ipcMain.handle('kb:findItemsForEntries', (_e, entryIds: number[]) => {
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    return new KnowledgeBase(getContext().repo.getDb()).findItemsForEntries(entryIds)
+  })
 
   ipcMain.handle('kb:updateItem', (_e, id: number, patch: { title?: string; body?: string; reason?: string }) => {
     const c = getContext()

@@ -59,7 +59,8 @@ export function importKnowledgeFiles(
         sourceType,
         body,
         filePath,
-        reason: reason?.trim() ?? ''
+        reason: reason?.trim() ?? '',
+        action: 'import'
       }))
     } catch (error) {
       failures.push({ fileName, error: readableError(error) })

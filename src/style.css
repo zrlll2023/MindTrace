@@ -62,6 +62,8 @@
   --k-quote-weak: #fbeaf0;
   --k-idea: #8a55d6;
   --k-idea-weak: #f1eafb;
+  --k-knowledge: #3f7d52;
+  --k-knowledge-weak: #e6f2ea;
   --k-other: #8b8578;
   --k-other-weak: #f0eeea;
 
@@ -110,6 +112,8 @@
   --k-quote-weak: #2b1821;
   --k-idea: #b58cf7;
   --k-idea-weak: #211a33;
+  --k-knowledge: #7fc79b;
+  --k-knowledge-weak: #16281f;
   --k-other: #9b958a;
   --k-other-weak: #232320;
 
@@ -529,6 +533,7 @@ button.icon-btn { padding: 5px; width: 28px; height: 28px; }
 .k-conversation { --kc: var(--k-conversation); --kc-weak: var(--k-conversation-weak); }
 .k-quote { --kc: var(--k-quote); --kc-weak: var(--k-quote-weak); }
 .k-idea { --kc: var(--k-idea); --kc-weak: var(--k-idea-weak); }
+.k-knowledge { --kc: var(--k-knowledge); --kc-weak: var(--k-knowledge-weak); }
 .k-other { --kc: var(--k-other); --kc-weak: var(--k-other-weak); }
 
 /* ---------- 消息 / 提示 ---------- */

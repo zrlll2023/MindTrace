@@ -48,7 +48,7 @@ export async function commitCaptureEntries(repo: Repo, messageId: number, entrie
       if (!validated.ok || !validated.entry) throw new Error(`第 ${index + 1} 条记录内容无效`)
       const value = validated.entry
       if (value.kind === 'sleep') {
-        const existingSleep = await repo.listEntries({ dateFrom: entry.entryDate, dateTo: entry.entryDate, kind: 'sleep', limit: 1 })
+        const existingSleep = await repo.listEntries({ dateFrom: entry.entryDate, dateTo: entry.entryDate, kind: 'sleep', limit: 1, includeHidden: true })
         if (existingSleep.length) {
           throw new Error(`第 ${index + 1} 条记录：当天已有睡眠记录，请到时间线更正已有记录或使用手动分段录入`)
         }
@@ -98,6 +98,7 @@ export async function undoCaptureCommit(repo: Repo, messageId: number): Promise<
   const placeholders = entryIds.map(() => '?').join(',')
   db.run('BEGIN')
   try {
+    // 这些资料由被撤销的记录收录而来，时间线上没有它们的流水，撤销也不留删除痕迹
     const knowledgeResult = db.exec(`SELECT COUNT(*) FROM kb_items WHERE source_entry_id IN (${placeholders})`, entryIds)
     const knowledgeCount = Number(knowledgeResult[0]?.values[0]?.[0] ?? 0)
     const entryResult = db.exec(`SELECT COUNT(*) FROM entries WHERE id IN (${placeholders}) AND source = 'chat'`, entryIds)

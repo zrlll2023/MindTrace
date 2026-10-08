@@ -472,7 +472,8 @@ async function saveExtendAsItem(): Promise<void> {
     {
       title: `AI 延伸 ${new Date().toLocaleDateString('zh-CN')}`,
       sourceType: 'markdown',
-      reason: 'AI 延伸结果（用户确认保存）'
+      reason: 'AI 延伸结果（用户确认保存）',
+      action: 'extend'
     },
     extendResult.value
   )
