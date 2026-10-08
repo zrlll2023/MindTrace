@@ -269,7 +269,47 @@ export function registerIpcHandlers(): void {
   )
 
   // ---------- capture ----------
-  ipcMain.handle('capture:list', () => new CaptureHistory(getContext().repo.getDb()).list())
+  ipcMain.handle('capture:list', (_e, sessionId?: string) => new CaptureHistory(getContext().repo.getDb()).list(sessionId))
+  ipcMain.handle('capture:sessions', () => new CaptureHistory(getContext().repo.getDb()).sessions())
+  ipcMain.handle('capture:defaultTitle', (_e, sessionId?: string) => new CaptureHistory(getContext().repo.getDb()).defaultTitle(sessionId))
+  ipcMain.handle('capture:usage', (_e, sessionId?: string) => {
+    const c = getContext()
+    const messages = new CaptureHistory(c.repo.getDb()).list(sessionId ?? 'default')
+    const sum = (pick: (u: NonNullable<(typeof messages)[number]['usage']>) => number | undefined): number =>
+      messages.reduce((total, m) => total + (m.usage ? pick(m.usage) ?? 0 : 0), 0)
+    return {
+      totalTokens: sum(u => u.totalTokens),
+      promptTokens: sum(u => u.promptTokens),
+      completionTokens: sum(u => u.completionTokens),
+      balance: null,
+      balanceNote: '余额暂不支持查询'
+    }
+  })
+  ipcMain.handle('capture:generateTitle', async (_e, sessionId?: string) => {
+    const c = getContext()
+    const llm = c.getLlm()
+    if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
+    try {
+      const history = new CaptureHistory(c.repo.getDb())
+      const desensitize = c.getSettings().desensitize
+      const convo = history
+        .list(sessionId ?? 'default')
+        .filter(m => m.text)
+        .slice(0, 12)
+        .map(m => ({ role: m.role, content: desensitize ? desensitizeText(m.text) : m.text }))
+      if (!convo.length) return { ok: false, error: '当前对话还没有内容' }
+      const raw = await llm.chat([
+        { role: 'system', content: '你是标题生成器。根据用户与 AI 的记录对话，生成一个不超过 16 个汉字的简洁中文标题，概括这段对话的主题。只输出标题本身，不要引号、结尾标点或任何解释。' },
+        ...convo,
+        { role: 'user', content: '请为以上对话生成标题。' }
+      ])
+      const title = raw.replace(/\s+/g, ' ').trim().replace(/^["'「『【]|["'」』】]$/g, '').slice(0, 24)
+      if (!title) return { ok: false, error: 'AI 未返回有效标题' }
+      return { ok: true, title }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
   ipcMain.handle('capture:parse', async (_e, raw: string) => {
     const c = getContext()
     const llm = c.getLlm()
@@ -284,7 +324,7 @@ export function registerIpcHandlers(): void {
       if (!history.has(userMessage.id)) {
         return { ok: false, canceled: true, error: '对话已清空，本次 AI 回复已忽略', parsed: [] }
       }
-      const msg = history.add('assistant', '我解析出了以下内容，请确认：', { parsed: result.entries, profileDraft: result.profileDraft })
+      const msg = history.add('assistant', '我解析出了以下内容，请确认：', { parsed: result.entries, profileDraft: result.profileDraft, usage: llm.lastUsage })
       const folder = new KnowledgeBase(c.repo.getDb()).ensureSystemFolder(AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME)
       c.repo.save()
       return { ok: true, message: msg, defaultFolderId: folder.id }
@@ -317,11 +357,11 @@ export function registerIpcHandlers(): void {
       return { ok: false, error: (error as Error).message }
     }
   })
-  ipcMain.handle('capture:clear', () => {
+  ipcMain.handle('capture:archive', (_e, title?: string) => {
     const c = getContext()
-    new CaptureHistory(c.repo.getDb()).clear()
+    const sessionId = new CaptureHistory(c.repo.getDb()).archiveSession(title)
     c.repo.save()
-    return { ok: true }
+    return { ok: true, sessionId }
   })
 
   // ---------- timeline ----------

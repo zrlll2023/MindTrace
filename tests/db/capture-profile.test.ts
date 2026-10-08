@@ -13,7 +13,7 @@ describe('持久快速记录与用户资料', () => {
     expect(history.list()[1].committed).toBe(true)
     expect(history.list()[1].archivedEntryIds).toEqual([12])
     expect(history.context(1)).toHaveLength(1)
-    history.clear()
+    history.archiveSession()
     expect(history.list()).toHaveLength(0)
   })
 

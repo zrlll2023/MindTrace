@@ -45,6 +45,7 @@ export function normalizeBaseUrl(raw: string): string {
 }
 
 export class LLMAdapter {
+  lastUsage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
   constructor(private cfg: LLMConfig) {}
 
   private base(): string {
@@ -80,7 +81,9 @@ export class LLMAdapter {
     }
     const data = (await res.json()) as {
       choices?: { message?: { content?: string | null } }[]
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
     }
+    this.lastUsage = data.usage ? { promptTokens: data.usage.prompt_tokens, completionTokens: data.usage.completion_tokens, totalTokens: data.usage.total_tokens } : undefined
     const content = data.choices?.[0]?.message?.content
     if (content == null) throw new Error('LLM 返回缺少 choices[0].message.content')
     return content

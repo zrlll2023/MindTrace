@@ -38,11 +38,15 @@ const api = {
       ipcRenderer.invoke('llm:testConnection', baseUrl, apiKey, model)
   },
   capture: {
-    list: () => ipcRenderer.invoke('capture:list'),
+    list: (sessionId?: string) => ipcRenderer.invoke('capture:list', sessionId),
+    sessions: () => ipcRenderer.invoke('capture:sessions'),
+    usage: (sessionId?: string) => ipcRenderer.invoke('capture:usage', sessionId),
+    defaultTitle: (sessionId?: string) => ipcRenderer.invoke('capture:defaultTitle', sessionId),
+    generateTitle: (sessionId?: string) => ipcRenderer.invoke('capture:generateTitle', sessionId),
     parse: (raw: string) => ipcRenderer.invoke('capture:parse', raw),
     commit: (messageId: number, entries: unknown[]) => ipcRenderer.invoke('capture:commit', messageId, entries),
     undoCommit: (messageId: number) => ipcRenderer.invoke('capture:undoCommit', messageId),
-    clear: () => ipcRenderer.invoke('capture:clear')
+    archive: (title?: string) => ipcRenderer.invoke('capture:archive', title)
   },
   entries: {
     manual: (kind: string, content: object, rawText: string, entryDate?: string, knowledge?: unknown) =>

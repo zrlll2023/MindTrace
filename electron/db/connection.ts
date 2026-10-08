@@ -209,12 +209,40 @@ function migrate(db: Database): void {
     committed INTEGER NOT NULL DEFAULT 0,
     error TEXT DEFAULT '',
     archived_entry_ids_json TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    session_id TEXT NOT NULL DEFAULT 'default',
+    usage_json TEXT
   )`)
   const captureCols = db.exec('PRAGMA table_info(capture_messages)')
   if (captureCols.length && !captureCols[0].values.some(v => v[1] === 'archived_entry_ids_json')) {
     db.run('ALTER TABLE capture_messages ADD COLUMN archived_entry_ids_json TEXT')
   }
+  if (captureCols.length && !captureCols[0].values.some(v => v[1] === 'session_id')) db.run("ALTER TABLE capture_messages ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default'")
+  if (captureCols.length && !captureCols[0].values.some(v => v[1] === 'usage_json')) db.run('ALTER TABLE capture_messages ADD COLUMN usage_json TEXT')
+
+  db.run(`CREATE TABLE IF NOT EXISTS capture_sessions (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    last_message_at TEXT,
+    archived_at TEXT
+  )`)
+  // 回填：为已存在消息但缺会话行的 session_id 补建元数据（兼容旧库，也收拾历史碎片）
+  db.run(`INSERT INTO capture_sessions (id, title, status, created_at, last_message_at, archived_at)
+    SELECT
+      m.session_id,
+      COALESCE((SELECT substr(replace(replace(m2.text, char(10), ' '), char(13), ' '), 1, 24)
+                  FROM capture_messages m2
+                 WHERE m2.session_id = m.session_id AND m2.role = 'user' AND m2.text <> ''
+                 ORDER BY m2.id LIMIT 1), ''),
+      CASE WHEN m.session_id = 'default' THEN 'active' ELSE 'archived' END,
+      MIN(m.created_at),
+      MAX(m.created_at),
+      CASE WHEN m.session_id = 'default' THEN NULL ELSE MAX(m.created_at) END
+    FROM capture_messages m
+    WHERE m.session_id NOT IN (SELECT id FROM capture_sessions)
+    GROUP BY m.session_id`)
 
   db.run(`CREATE TABLE IF NOT EXISTS profile_fields (
     key TEXT PRIMARY KEY,

@@ -110,12 +110,39 @@
     <div v-else class="capture">
       <div class="chat-tools">
         <span class="hint">本次对话会保存在本机，AI 会结合最近上下文理解你的记录。</span>
+        <div class="usage-strip">
+          <span>当前对话 Token：{{ usage.totalTokens || '—' }}</span>
+          <span class="muted">余额：{{ usage.balanceNote || '暂不支持' }}</span>
+        </div>
         <div class="chat-tool-actions">
           <span v-if="clearMessage" class="msg err inline">{{ clearMessage }}</span>
-          <button class="ghost small" type="button" :disabled="clearing || store.busy || !!store.committingIds.length || !!store.undoingIds.length" @click="openClearDialog">
-            {{ clearing ? '正在清空…' : '清空并新建' }}
+          <button class="ghost small" type="button" :disabled="clearing || store.busy || !!store.committingIds.length || !!store.undoingIds.length" @click="openArchiveDialog">
+            {{ clearing ? '正在归档…' : '归档并新建' }}
           </button>
         </div>
+      </div>
+
+      <div v-if="viewingHistory" class="history-banner">
+        <Icon name="chat" :size="14" />
+        <span>正在回看历史对话，发送新消息会切回当前对话。</span>
+        <button class="ghost small" type="button" @click="backToActive">返回当前对话</button>
+      </div>
+
+      <div v-if="historySessions.length" class="history-strip">
+        <span class="history-title">历史对话</span>
+        <button
+          v-for="session in historySessions"
+          :key="session.id"
+          class="ghost small history-item"
+          :class="{ on: session.id === store.currentSessionId }"
+          type="button"
+          @click="loadSession(session.id)"
+        >
+          <span class="history-item-title">{{ session.title || '未命名对话' }}</span>
+          <span class="history-item-meta">
+            {{ formatMessageTime(session.lastMessageAt || session.createdAt) }} · {{ session.messageCount }} 条<template v-if="session.tokenCount"> · {{ session.tokenCount }} token</template>
+          </span>
+        </button>
       </div>
       <div class="messages" ref="listEl">
         <div v-if="!store.messages.length" class="empty">
@@ -194,17 +221,28 @@
       </div>
     </div>
 
-    <div v-if="clearDialogOpen" class="drawer-mask" @click.self="closeClearDialog">
-      <section class="clear-dialog" role="alertdialog" aria-modal="true" aria-labelledby="clear-dialog-title" aria-describedby="clear-dialog-description" @keydown.esc="closeClearDialog">
-        <div class="clear-dialog-icon"><Icon name="trash" :size="20" /></div>
+    <div v-if="archiveDialogOpen" class="drawer-mask" @click.self="closeArchiveDialog">
+      <section class="clear-dialog archive-dialog" role="dialog" aria-modal="true" aria-labelledby="archive-dialog-title" aria-describedby="archive-dialog-description" @keydown.esc="closeArchiveDialog">
+        <div class="clear-dialog-icon"><Icon name="chat" :size="20" /></div>
         <div class="clear-dialog-copy">
-          <h3 id="clear-dialog-title">清空当前对话？</h3>
-          <p id="clear-dialog-description">当前 AI 快速记录对话会被清空，已经保存到时间线和知识库的内容不会删除。</p>
+          <h3 id="archive-dialog-title">归档当前对话？</h3>
+          <p id="archive-dialog-description">当前对话会归档为一条历史对话，可在时间线回看原文；已保存到时间线和知识库的内容不受影响。</p>
+          <div class="title-field">
+            <label for="archive-title-input">对话标题</label>
+            <div class="title-row">
+              <input id="archive-title-input" v-model="archiveTitle" type="text" maxlength="40" placeholder="给这段对话起个标题" />
+              <button class="ghost small" type="button" :disabled="titleBusy || clearing" @click="useDefaultTitle">默认</button>
+              <button class="secondary small" type="button" :disabled="titleBusy || clearing" @click="generateArchiveTitle">
+                {{ titleBusy ? '生成中…' : 'AI 生成' }}
+              </button>
+            </div>
+            <span v-if="titleError" class="msg err inline">{{ titleError }}</span>
+          </div>
         </div>
         <div class="clear-dialog-actions">
-          <button ref="cancelClearButton" class="ghost" type="button" :disabled="clearing" @click="closeClearDialog">取消</button>
-          <button class="danger" type="button" :disabled="clearing" @click="confirmClearConversation">
-            {{ clearing ? '正在清空…' : '清空并新建' }}
+          <button ref="cancelClearButton" class="ghost" type="button" :disabled="clearing" @click="closeArchiveDialog">取消</button>
+          <button class="primary" type="button" :disabled="clearing" @click="confirmArchiveConversation">
+            {{ clearing ? '正在归档…' : '归档并新建' }}
           </button>
         </div>
       </section>
@@ -235,9 +273,20 @@ const composerEl = ref<HTMLTextAreaElement>()
 const cancelClearButton = ref<HTMLButtonElement>()
 const clearing = ref(false)
 const clearMessage = ref('')
-const clearDialogOpen = ref(false)
+const archiveDialogOpen = ref(false)
 const archiveToast = ref('')
+interface SessionItem { id: string; title: string; status: 'active' | 'archived'; createdAt: string; lastMessageAt: string | null; messageCount: number; tokenCount: number }
+const sessions = ref<SessionItem[]>([])
+const usage = ref<{ totalTokens: number; promptTokens: number; completionTokens: number; balance: number | null; balanceNote?: string }>({ totalTokens: 0, promptTokens: 0, completionTokens: 0, balance: null, balanceNote: '暂不支持' })
+const archiveTitle = ref('')
+const defaultArchiveTitle = ref('')
+const titleBusy = ref(false)
+const titleError = ref('')
 let archiveToastTimer: ReturnType<typeof setTimeout> | undefined
+
+/** 历史对话条只展示已归档会话；进行中的活跃对话就是当前视图本身 */
+const historySessions = computed(() => sessions.value.filter(s => s.status === 'archived'))
+const viewingHistory = computed(() => store.currentSessionId !== 'default')
 
 const mode = ref<'manual' | 'ai'>('manual')
 interface Folder { id: number; name: string; system_key?: string | null }
@@ -374,8 +423,27 @@ async function saveManual(): Promise<void> {
 
 // ---------- AI 快速记录 ----------
 async function submit(): Promise<void> {
+  // 回看历史时发送新消息，先切回进行中的活跃对话，避免写入已归档会话
+  if (store.currentSessionId !== 'default') await store.load()
   await store.send(store.input)
+  await refreshUsage()
+  await refreshSessions()
   await loadFolders()
+}
+
+async function refreshSessions(): Promise<void> { sessions.value = await window.api.capture.sessions() }
+async function refreshUsage(sessionId?: string): Promise<void> { usage.value = await window.api.capture.usage(sessionId ?? store.currentSessionId) }
+async function loadSession(id: string): Promise<void> {
+  await store.load(id)
+  await refreshUsage(id)
+  await nextTick()
+  await scrollToLatest()
+}
+async function backToActive(): Promise<void> {
+  await store.load()
+  await refreshUsage()
+  await nextTick()
+  await scrollToLatest()
 }
 
 async function archiveMessage(m: ChatMessageItem): Promise<void> {
@@ -412,32 +480,59 @@ async function loadFolders(): Promise<void> {
   }
 }
 
-async function openClearDialog(): Promise<void> {
+async function openArchiveDialog(): Promise<void> {
   clearMessage.value = ''
-  clearDialogOpen.value = true
+  titleError.value = ''
+  titleBusy.value = false
+  // 归档始终针对进行中的活跃对话
+  if (store.currentSessionId !== 'default') await store.load()
+  defaultArchiveTitle.value = await window.api.capture.defaultTitle('default')
+  archiveTitle.value = defaultArchiveTitle.value
+  archiveDialogOpen.value = true
   await nextTick()
   cancelClearButton.value?.focus()
 }
 
-function closeClearDialog(): void {
+function closeArchiveDialog(): void {
   if (clearing.value) return
-  clearDialogOpen.value = false
+  archiveDialogOpen.value = false
 }
 
-async function confirmClearConversation(): Promise<void> {
+function useDefaultTitle(): void {
+  archiveTitle.value = defaultArchiveTitle.value
+  titleError.value = ''
+}
+
+async function generateArchiveTitle(): Promise<void> {
+  titleBusy.value = true
+  titleError.value = ''
+  try {
+    const r = await window.api.capture.generateTitle('default')
+    if (r.ok) archiveTitle.value = r.title
+    else titleError.value = r.error || 'AI 生成失败，可手动填写'
+  } catch (error) {
+    titleError.value = error instanceof Error ? error.message : 'AI 生成失败，可手动填写'
+  } finally {
+    titleBusy.value = false
+  }
+}
+
+async function confirmArchiveConversation(): Promise<void> {
   clearing.value = true
   clearMessage.value = ''
   try {
-    const cleared = await store.clear()
-    if (!cleared) {
-      clearMessage.value = store.busy || store.committingIds.length ? '请等待当前操作完成后再清空' : '清空失败，请重试'
+    const archived = await store.archive(archiveTitle.value.trim() || undefined)
+    if (!archived) {
+      clearMessage.value = store.busy || store.committingIds.length ? '请等待当前操作完成后再归档' : '归档失败，请重试'
       return
     }
-    clearDialogOpen.value = false
+    archiveDialogOpen.value = false
+    await refreshSessions()
+    await refreshUsage()
     await nextTick()
     composerEl.value?.focus()
   } catch (error) {
-    clearMessage.value = error instanceof Error ? error.message : '清空失败，请重试'
+    clearMessage.value = error instanceof Error ? error.message : '归档失败，请重试'
   } finally {
     clearing.value = false
   }
@@ -488,6 +583,8 @@ onMounted(async () => {
     manualKind.value = 'sleep'
   }
   await store.load()
+  await refreshSessions()
+  await refreshUsage()
   await loadFolders()
   if (mode.value === 'ai') await scrollToLatest()
 })
@@ -536,8 +633,22 @@ watch(mode, v => {
 
 /* AI 聊天 */
 .capture { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.chat-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; }
+.chat-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
 .chat-tool-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.usage-strip { display: flex; gap: 10px; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.usage-strip .muted { opacity: 0.75; }
+.history-strip { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 0 0 8px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+.history-title { font-size: 12px; color: var(--text-2); font-weight: 600; }
+.history-banner { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 7px 10px; border: 1px solid var(--accent); border-radius: var(--r); background: var(--accent-weak); color: var(--text-2); font-size: 12px; }
+.history-banner button { margin-left: auto; }
+.history-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; padding: 5px 9px; line-height: 1.3; }
+.history-item.on { border-color: var(--accent); background: var(--accent-weak); }
+.history-item-title { font-size: 12px; color: var(--text); font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-item-meta { font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.title-field { margin-top: 12px; }
+.title-field > label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; }
+.title-row { display: flex; gap: 7px; align-items: center; }
+.title-row input { flex: 1; min-width: 0; }
 .messages { flex: 1; overflow-y: auto; padding: 4px 4px 8px; }
 .empty { margin-top: 8vh; }
 .empty h3 { font-family: var(--font-serif); font-size: 19px; color: var(--text); }

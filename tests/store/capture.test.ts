@@ -31,7 +31,7 @@ describe('AI 快速记录状态', () => {
             parse: vi.fn(),
             commit: vi.fn(async () => ({ ok: true, entries: [] })),
             undoCommit: vi.fn(async () => ({ ok: true, timelineCount: 1, knowledgeCount: 1 })),
-            clear: vi.fn(async () => ({ ok: true }))
+            archive: vi.fn(async () => ({ ok: true, sessionId: 's-1' }))
           }
         }
       }
@@ -107,26 +107,27 @@ describe('AI 快速记录状态', () => {
     expect(msg.archivedEntryIds).toBeUndefined()
   })
 
-  it('清空成功后重置消息、输入和提交状态', async () => {
+  it('归档成功后重置消息、输入和提交状态', async () => {
     const store = useCaptureStore()
     store.messages = [{ id: 1, role: 'user', text: '旧内容' }]
     store.input = '未发送内容'
 
-    expect(await store.clear()).toBe(true)
+    expect(await store.archive('今日复盘')).toBe(true)
     expect(store.messages).toEqual([])
     expect(store.input).toBe('')
     expect(store.committingIds).toEqual([])
-    expect(window.api.capture.clear).toHaveBeenCalledTimes(1)
+    expect(store.currentSessionId).toBe('default')
+    expect(window.api.capture.archive).toHaveBeenCalledWith('今日复盘')
   })
 
-  it('解析或归档期间拒绝清空当前对话', async () => {
+  it('解析或归档期间拒绝归档当前对话', async () => {
     const store = useCaptureStore()
     store.busy = true
-    expect(await store.clear()).toBe(false)
+    expect(await store.archive()).toBe(false)
     store.busy = false
     store.committingIds = [9]
-    expect(await store.clear()).toBe(false)
-    expect(window.api.capture.clear).not.toHaveBeenCalled()
+    expect(await store.archive()).toBe(false)
+    expect(window.api.capture.archive).not.toHaveBeenCalled()
   })
 
   it('切换类型时重建字段并阻止无效内容保存', () => {

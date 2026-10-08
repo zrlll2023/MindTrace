@@ -19,6 +19,8 @@ export interface ChatMessageItem {
   error?: string
   createdAt?: string
   archivedEntryIds?: number[]
+  sessionId?: string
+  usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
 }
 
 export function changeCaptureEntryKind(entry: CaptureEntry, nextKind: EntryKind): void {
@@ -59,6 +61,8 @@ export const useCaptureStore = defineStore('capture', () => {
   const input = ref('')
   const committingIds = ref<number[]>([])
   const undoingIds = ref<number[]>([])
+  /** 当前查看的会话 id：'default' 为进行中的活跃对话，其余为历史归档会话 */
+  const currentSessionId = ref('default')
 
   function normalize(messagesIn: ChatMessageItem[]): ChatMessageItem[] {
     return messagesIn.map(m => ({
@@ -74,8 +78,9 @@ export const useCaptureStore = defineStore('capture', () => {
     }))
   }
 
-  async function load(): Promise<void> {
-    messages.value = normalize(await window.api.capture.list())
+  async function load(sessionId?: string): Promise<void> {
+    currentSessionId.value = sessionId ?? 'default'
+    messages.value = normalize(await window.api.capture.list(sessionId))
   }
 
   async function send(text: string): Promise<void> {
@@ -145,14 +150,15 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
-  async function clear(): Promise<boolean> {
+  async function archive(title?: string): Promise<boolean> {
     if (busy.value || committingIds.value.length || undoingIds.value.length) return false
-    const result = await window.api.capture.clear()
+    const result = await window.api.capture.archive(title)
     if (!result.ok) return false
     messages.value = []
     input.value = ''
     committingIds.value = []
     undoingIds.value = []
+    currentSessionId.value = 'default'
     return true
   }
 
@@ -164,5 +170,5 @@ export const useCaptureStore = defineStore('capture', () => {
     return undoingIds.value.includes(messageId)
   }
 
-  return { messages, busy, input, committingIds, undoingIds, load, send, commit, undo, clear, isCommitting, isUndoing }
+  return { messages, busy, input, committingIds, undoingIds, currentSessionId, load, send, commit, undo, archive, isCommitting, isUndoing }
 })

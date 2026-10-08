@@ -43,7 +43,7 @@
     </div>
 
     <!-- 真轴线时间线 -->
-    <div v-if="entries.length" class="tl">
+    <div v-if="groups.length" class="tl">
       <section v-for="group in groups" :key="group.date" class="day">
         <div class="day-aside">
           <span class="day-node" />
@@ -55,17 +55,21 @@
             v-for="item in group.items"
             :key="item.key"
             class="entry"
-            :class="{ 'sleep-overview': item.type === 'sleep-day' }"
-            @click="item.type === 'sleep-day' ? openSleepDay(item) : openDetail(item.entry)"
+            :class="{ 'sleep-overview': item.type === 'sleep-day', 'chat-entry': item.type === 'chat' }"
+            @click="item.type === 'sleep-day' ? openSleepDay(item) : item.type === 'chat' ? openChat(item) : openDetail(item.entry)"
           >
-            <span class="t">{{ item.type === 'sleep-day' ? '全天' : item.entry.entry_time || '未标时间' }}</span>
-            <span class="kind-badge" :class="kindClass(item.type === 'sleep-day' ? 'sleep' : item.entry.kind)">
-              <span class="kind-dot" />{{ kindLabel(item.type === 'sleep-day' ? 'sleep' : item.entry.kind) }}
+            <span class="t">{{ itemTimeLabel(item) }}</span>
+            <span class="kind-badge" :class="itemBadgeClass(item)">
+              <span class="kind-dot" />{{ itemBadgeLabel(item) }}
             </span>
             <span v-if="item.type === 'sleep-day'" class="summary">
               总计 {{ item.totalHours.toFixed(1) }} 小时
               <template v-if="item.sessionCount"> · {{ item.sessionCount }} 段<span v-if="item.longestHours"> · 最长连续 {{ item.longestHours.toFixed(1) }} 小时</span></template>
               <template v-else> · 分段未知</template>
+            </span>
+            <span v-else-if="item.type === 'chat'" class="summary chat-summary">
+              {{ item.title || '未命名对话' }}
+              <em class="chat-meta">{{ item.messageCount }} 条<template v-if="item.tokenCount"> · {{ item.tokenCount }} token</template> · 点击回看原文</em>
             </span>
             <span v-else class="summary">{{ summarize(item.entry) }}</span>
             <span v-if="item.type === 'entry' && semanticOn && item.entry._score != null" class="score">
@@ -169,6 +173,30 @@
         </div>
       </div>
     </div>
+
+    <!-- 对话原文回看侧栏 -->
+    <div v-if="chatDetail" class="drawer-mask" @click.self="chatDetail = null">
+      <div class="drawer side">
+        <div class="drawer-head">
+          <span class="kind-badge" :class="kindClass('conversation')"><span class="kind-dot" />AI 对话</span>
+          <span class="meta">{{ chatDetail.title }} · {{ chatDetail.timeLabel }}</span>
+          <button class="close" title="关闭" @click="chatDetail = null"><Icon name="close" :size="16" /></button>
+        </div>
+        <div class="chat-transcript">
+          <div v-for="m in chatDetail.messages" :key="m.id" class="chat-line" :class="m.role">
+            <div class="chat-role">{{ m.role === 'user' ? '我' : 'AI' }}</div>
+            <div class="chat-text">
+              <p v-if="m.error" class="err">⚠️ {{ m.error }}</p>
+              <p v-if="m.text">{{ m.text }}</p>
+              <ul v-if="m.parsed && m.parsed.length" class="chat-parsed">
+                <li v-for="(p, i) in m.parsed" :key="i">{{ kindLabel(p.kind) }}：{{ parsedSummary(p) }}</li>
+              </ul>
+              <time v-if="m.createdAt" class="chat-time">{{ formatChatTime(m.createdAt) }}</time>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -209,7 +237,26 @@ interface SleepDayItem {
   sortTime: string
 }
 interface EntryItem { type: 'entry'; key: string; entry: EntryRow; sortTime: string }
-type TimelineItem = SleepDayItem | EntryItem
+interface ChatItem { type: 'chat'; key: string; sessionId: string; title: string; sortTime: string; messageCount: number; tokenCount: number; status: string }
+type TimelineItem = SleepDayItem | EntryItem | ChatItem
+
+interface ChatSessionRow {
+  id: string
+  title: string
+  status: 'active' | 'archived'
+  createdAt: string
+  lastMessageAt: string | null
+  messageCount: number
+  tokenCount: number
+}
+interface TranscriptMessage {
+  id: number
+  role: 'user' | 'assistant'
+  text: string
+  error?: string
+  createdAt?: string
+  parsed?: { kind: string; content: Record<string, unknown> }[]
+}
 
 const entries = ref<EntryRow[]>([])
 const kind = ref<EntryKind | null>(null)
@@ -226,6 +273,8 @@ const hasMore = ref(false)
 const detail = ref<EntryRow | null>(null)
 const detailForm = reactive<Record<string, any>>({})
 const sleepDayDetail = ref<SleepDayItem | null>(null)
+const chatSessions = ref<ChatSessionRow[]>([])
+const chatDetail = ref<{ sessionId: string; title: string; timeLabel: string; messages: TranscriptMessage[] } | null>(null)
 const saved = ref(false)
 const saveError = ref('')
 const router = useRouter()
@@ -256,6 +305,10 @@ function weekday(d: string): string {
   return Number.isNaN(dt.getTime()) ? '' : WEEKDAYS[dt.getDay()]
 }
 
+function chatDisplayDate(s: ChatSessionRow): string {
+  return (s.lastMessageAt || s.createdAt || '').slice(0, 10)
+}
+
 const groups = computed(() => {
   const map = new Map<string, EntryRow[]>()
   for (const e of entries.value) {
@@ -263,9 +316,24 @@ const groups = computed(() => {
     arr.push(e)
     map.set(e.entry_date, arr)
   }
-  return [...map.entries()]
-    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .map(([date, records]) => {
+  // 会话按最近消息时间归入对应天；搜索态下不混入会话（会话不进全文/语义检索）
+  const chatMap = new Map<string, ChatSessionRow[]>()
+  if (!searching.value) {
+    for (const s of chatSessions.value) {
+      const date = chatDisplayDate(s)
+      if (!date) continue
+      if (dateFrom.value && date < dateFrom.value) continue
+      if (dateTo.value && date > dateTo.value) continue
+      const arr = chatMap.get(date) ?? []
+      arr.push(s)
+      chatMap.set(date, arr)
+    }
+  }
+  const dates = [...new Set([...map.keys(), ...chatMap.keys()])]
+  return dates
+    .sort((a, b) => (a < b ? 1 : -1))
+    .map(date => {
+      const records = map.get(date) ?? []
       const items: TimelineItem[] = records
         .filter(entry => entry.kind !== 'sleep')
         .map(entry => ({ type: 'entry', key: `entry-${entry.id}`, entry, sortTime: entry.entry_time ?? '' }))
@@ -274,8 +342,12 @@ const groups = computed(() => {
         .map(entry => ({ entry, sleep: parseSleepContent(entry.content) }))
         .filter((value): value is SleepSegment => value.sleep !== null)
       if (segments.length) items.push(makeSleepDay(date, segments))
+      for (const s of chatMap.get(date) ?? []) {
+        const ts = s.lastMessageAt || s.createdAt || ''
+        items.push({ type: 'chat', key: `chat-${s.id}`, sessionId: s.id, title: s.title, sortTime: ts.slice(11, 16), messageCount: s.messageCount, tokenCount: s.tokenCount, status: s.status })
+      }
       items.sort((a, b) => b.sortTime.localeCompare(a.sortTime) || b.key.localeCompare(a.key))
-      return { date, items, recordCount: records.length }
+      return { date, items, recordCount: records.length + (chatMap.get(date)?.length ?? 0) }
     })
 })
 
@@ -329,6 +401,10 @@ async function load(reset = true): Promise<void> {
   entries.value = reset ? page : [...entries.value, ...page]
   offset.value = entries.value.length
   hasMore.value = page.length === PAGE
+  if (reset) {
+    // 打开/重载时间线时才查询会话历史；按类型筛选时不混入对话条目
+    chatSessions.value = kind.value ? [] : await window.api.capture.sessions()
+  }
 }
 
 function loadMore(): void {
@@ -386,6 +462,41 @@ function openDetail(e: EntryRow): void {
   Object.assign(detailForm, JSON.parse(e.content) as Record<string, unknown>)
   saved.value = false
   saveError.value = ''
+}
+
+function itemTimeLabel(item: TimelineItem): string {
+  if (item.type === 'sleep-day') return '全天'
+  if (item.type === 'chat') return item.sortTime || '对话'
+  return item.entry.entry_time || '未标时间'
+}
+function itemBadgeClass(item: TimelineItem): string {
+  if (item.type === 'sleep-day') return kindClass('sleep')
+  if (item.type === 'chat') return kindClass('conversation')
+  return kindClass(item.entry.kind)
+}
+function itemBadgeLabel(item: TimelineItem): string {
+  if (item.type === 'sleep-day') return kindLabel('sleep')
+  if (item.type === 'chat') return 'AI 对话'
+  return kindLabel(item.entry.kind)
+}
+function parsedSummary(p: { kind: string; content: Record<string, unknown> }): string {
+  const c = p.content || {}
+  if (typeof c.text === 'string') return c.text
+  if (c.hours != null) return `${c.hours} 小时`
+  return JSON.stringify(c)
+}
+function formatChatTime(value: string): string {
+  const normalized = value.trim().replace('T', ' ')
+  return normalized.length >= 16 ? normalized.slice(0, 16) : normalized
+}
+async function openChat(item: ChatItem): Promise<void> {
+  const messages = (await window.api.capture.list(item.sessionId)) as TranscriptMessage[]
+  chatDetail.value = {
+    sessionId: item.sessionId,
+    title: item.title || '未命名对话',
+    timeLabel: itemTimeLabel(item),
+    messages
+  }
 }
 
 function openSleepDay(item: SleepDayItem): void { sleepDayDetail.value = item }
@@ -525,6 +636,21 @@ onMounted(() => void load())
   background: var(--surface-2); border-radius: var(--r);
   padding: 10px 12px; font-size: 13px; color: var(--text-2); margin: 0;
 }
+
+/* ---- 对话条目与回看原文 ---- */
+.chat-summary { display: flex; flex-direction: column; gap: 2px; white-space: normal; overflow: visible; }
+.chat-meta { font-style: normal; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.chat-transcript { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding: 4px 2px; }
+.chat-line { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; align-items: start; }
+.chat-role { font-size: 11px; color: var(--text-3); text-align: right; padding-top: 7px; }
+.chat-line.user .chat-role { color: var(--accent-text); }
+.chat-text { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 11px; font-size: 13px; color: var(--text); }
+.chat-line.user .chat-text { background: var(--accent-weak); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.chat-text p { margin: 0 0 4px; white-space: pre-wrap; word-break: break-word; }
+.chat-text p:last-child { margin-bottom: 0; }
+.chat-text .err { color: var(--danger); font-size: 12.5px; }
+.chat-parsed { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; font-size: 12px; color: var(--text-2); }
+.chat-time { display: block; margin-top: 6px; font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 textarea.mono { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
 .sleep-day-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
 .sleep-day-stats div { display: flex; flex-direction: column; padding: 12px; background: var(--surface-2); border-radius: var(--r); }
