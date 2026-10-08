@@ -11,28 +11,30 @@
 
 ## 分支命名规范
 
-- AI 或自动化代理创建的临时工作分支统一使用 `codex/<范围>-<目标>`，例如 `codex/profile-trend-visibility`、`codex/chinese-commit-guidelines`。
+- AI 或自动化代理创建的分支名称直接由本次改动的业务主题决定，不使用任何前缀：不用 AI 工具名前缀（如 `codex/`、`opencode/`、`claudecode/`），也不用类型前缀（如 `feat/`、`fix/`、`refactor/`）。分支名应能看出改动要解决什么问题，而不是由哪个工具创建。
 - 分支名称必须使用小写英文字母、数字和短横线，不使用中文、空格、下划线或大小写混写。
-- `/` 后建议使用 2 到 6 个单词并控制在 50 个字符以内；先写功能或业务范围，再写要达到的具体目标。
+- 建议使用 2 到 6 个单词并控制在 50 个字符以内；先写功能或业务范围，再写要达到的具体目标。
 - 一个分支只承载一个主要目标。需求目标彼此独立时，应分别创建分支，不得使用同一分支混合无关改动。
 - 禁止使用 `test`、`temp`、`new`、`update`、`changes`、`work` 等无法说明范围和目标的模糊名称。
-- `feat/`、`fix/`、`refactor/`、`docs/`、`test/`、`chore/` 等类型前缀仅用于维护者明确指定的长期或人工协作分支，AI 不得自行用这些前缀替代 `codex/`。
+- `feat/`、`fix/`、`refactor/`、`docs/`、`test/`、`chore/` 等类型前缀仅用于维护者明确指定的长期或人工协作分支，AI 不得自行添加任何前缀。
 - 新分支应从最新且干净的目标基线创建；已合并分支不得直接复用来承载新的需求。
-- 本规范生效前已经存在的长期分支保持原名，不为了统一格式重写远端分支历史。
+- 本规范生效前已经存在的分支保持原名，不为了统一格式重写远端分支历史。
 
 推荐示例：
 
 ```text
-codex/profile-trend-visibility
-codex/report-export-settings
-codex/duplicate-import-guard
+profile-trend-visibility
+report-export-settings
+duplicate-import-guard
+branch-naming-convention
 ```
 
 不推荐示例：
 
 ```text
-codex/update
-codex/new_feature
+codex/profile-trend-visibility
+opencode/branch-prefix-ownership-rule
+feat/update
 test
 我的新分支
 ```
