@@ -84,7 +84,7 @@
         </div>
       </aside>
 
-      <main class="content">
+      <main class="content" :class="{ 'content-fixed': route.meta.noScroll }">
         <RouterView />
       </main>
     </div>

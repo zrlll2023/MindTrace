@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, Menu, nativeTheme } from 'electron'
+import { app, BrowserWindow, dialog, Menu, nativeTheme, net, protocol } from 'electron'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { initContext } from './context'
 import { registerIpcHandlers } from './ipc/handlers'
 import { Scheduler } from './scheduler'
@@ -8,6 +9,16 @@ import fs from 'node:fs'
 import { dataLocationStatus } from './store/data-location'
 import { initializeUpdater, startUpdaterChecks } from './updater'
 import { initializeLogger, logError, logInfo } from './logger'
+import { ASSET_SCHEME, assetNameFromUrl, resolveAssetPath } from './knowledge/assets'
+
+// 图片资源协议必须在 app ready 之前声明特权，否则 <img> 无法加载自定义 scheme
+// corsEnabled 不可省：生产包以 file:// 打开页面，取自定义协议属于跨源请求
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: ASSET_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
+  }
+])
 
 async function createWindow() {
   const dark = nativeTheme.shouldUseDarkColors
@@ -30,6 +41,11 @@ async function createWindow() {
     win.show()
     win.focus()
     if (process.platform === 'win32') app.focus({ steal: true }) // 从启动它的控制台手中抢回焦点
+  })
+  // 资料正文可能含链接：既不放开新窗口，也不允许主窗口被导航走
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-navigate', event => {
+    if (event.url !== win.webContents.getURL()) event.preventDefault()
   })
   win.webContents.on('render-process-gone', (_event, details) => {
     logError('renderer.process-gone', `${details.reason} (exit ${details.exitCode})`)
@@ -64,6 +80,11 @@ app.whenReady().then(async () => {
     logInfo('data.fallback-to-previous')
   }
   const ctx = await initContext(explicitDataDir)
+  protocol.handle(ASSET_SCHEME, request => {
+    const file = resolveAssetPath(ctx.dataDir, assetNameFromUrl(request.url))
+    if (!file) return new Response('Forbidden', { status: 403 })
+    return net.fetch(pathToFileURL(file).href)
+  })
   registerIpcHandlers()
   initializeUpdater({
     beforeInstall: async () => {

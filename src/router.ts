@@ -5,7 +5,7 @@ export interface NavRoute {
   name: string
   component: () => Promise<unknown>
   props?: Record<string, unknown>
-  meta?: { nav?: boolean; icon?: string; label?: string; desc?: string }
+  meta?: { nav?: boolean; icon?: string; label?: string; desc?: string; noScroll?: boolean }
 }
 
 export const routes: NavRoute[] = [
@@ -31,7 +31,7 @@ export const routes: NavRoute[] = [
     path: '/knowledge',
     name: 'knowledge',
     component: () => import('./views/KnowledgeView.vue'),
-    meta: { nav: true, icon: 'book', label: '知识库', desc: '收录资料，写下原因与感受' }
+    meta: { nav: true, icon: 'book', label: '知识库', desc: '收录资料，写下原因与感受', noScroll: true }
   },
   {
     path: '/me',

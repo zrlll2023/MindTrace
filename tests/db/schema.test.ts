@@ -27,8 +27,12 @@ describe('schema 迁移', () => {
     const captureCols = db.exec('PRAGMA table_info(capture_messages)')[0].values.map(v => v[1])
     const sessionCols = db.exec('PRAGMA table_info(capture_sessions)')[0].values.map(v => v[1])
     expect(folderCols).toContain('system_key')
+    expect(folderCols).toContain('sort_order')
+    expect(folderCols).toContain('tags')
     expect(itemCols).toContain('source_entry_id')
     expect(itemCols).toContain('import_key')
+    expect(itemCols).toContain('title_locked')
+    expect(itemCols).toContain('tags')
     expect(entryCols).toContain('entry_time')
     expect(captureCols).toContain('archived_entry_ids_json')
     // 三类会上时间线的行都要记住隐去范围，恢复后状态才不会丢
@@ -98,6 +102,32 @@ describe('schema 迁移', () => {
       expect(Number(db.exec("SELECT COUNT(*) FROM kb_events WHERE action = 'edit'")[0].values[0][0])).toBe(1)
       persistDb(db, dir)
       expect(eventRows(await initDb(dir))).toHaveLength(4)
+    })
+  })
+
+  describe('升级到文件夹手动顺序', () => {
+    let dir = ''
+    afterEach(() => {
+      if (dir) fs.rmSync(dir, { recursive: true, force: true })
+      dir = ''
+    })
+
+    it('老库的 sort_order 按 id 回填，显示顺序不变', async () => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mindtrace-order-'))
+      const before = await initDb(':memory:')
+      before.run("INSERT INTO kb_folders (name) VALUES ('先建的')")
+      before.run("INSERT INTO kb_folders (name) VALUES ('后建的')")
+      before.run("INSERT INTO kb_items (folder_id, title, source_type, body) VALUES (1, '旧资料', 'entry', '内容')")
+      before.run('UPDATE kb_folders SET sort_order = NULL')
+      before.run('UPDATE kb_items SET title_locked = NULL')
+      persistDb(before, dir)
+
+      const db = await initDb(dir)
+      const rows = db.exec('SELECT name, sort_order FROM kb_folders ORDER BY sort_order IS NULL, sort_order, id')[0].values
+      expect(rows.map(r => r[0])).toEqual(['先建的', '后建的'])
+      expect(rows.map(r => r[1])).toEqual([1, 2])
+      // 老资料没有确认过标题，回填 0 之后正文改动仍按原规则同步标题
+      expect(db.exec('SELECT title_locked FROM kb_items')[0].values).toEqual([[0]])
     })
   })
 })

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { KbItem, KnowledgeBase } from '../db/knowledge'
 import { extractText, unzipOffice } from '../import/office'
+import { localizeMarkdownImages } from './assets'
 
 const SUPPORTED_EXTENSIONS = new Set(['md', 'markdown', 'txt', 'html', 'htm', 'docx', 'pptx', 'xlsx'])
 
@@ -30,6 +31,7 @@ function stripHtml(source: string): string {
 
 export function importKnowledgeFiles(
   kb: KnowledgeBase,
+  dataDir: string,
   folderId: number,
   filePaths: string[],
   reason?: string
@@ -50,6 +52,10 @@ export function importKnowledgeFiles(
       } else {
         const source = fs.readFileSync(filePath, 'utf8')
         body = ext === 'html' || ext === 'htm' ? stripHtml(source) : source
+        // 图片随文搬进资源目录：源文件日后移动或删除，知识库里的图仍然在
+        if (ext === 'md' || ext === 'markdown' || ext === 'txt') {
+          body = localizeMarkdownImages(dataDir, path.dirname(filePath), body).body
+        }
       }
       if (!body.trim()) throw new Error('未提取到可用文本')
 

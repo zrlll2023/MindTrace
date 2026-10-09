@@ -265,6 +265,7 @@ import TimeRangePicker, { TimeRangeValue } from '../components/TimeRangePicker.v
 import { EntryKind } from '../../electron/types'
 import { KIND_PLAIN, kindClass } from '../utils/kinds'
 import { localDateString } from '../utils/datetime'
+import { AI_QUICK_CAPTURE_FOLDER_KEY } from '../utils/knowledge'
 
 const store = useCaptureStore()
 const route = useRoute()
@@ -291,7 +292,7 @@ const viewingHistory = computed(() => store.currentSessionId !== 'default')
 const mode = ref<'manual' | 'ai'>('manual')
 interface Folder { id: number; name: string; system_key?: string | null }
 const folders = ref<Folder[]>([])
-const manualFolders = computed(() => folders.value.filter(folder => folder.system_key !== 'ai_quick_capture'))
+const manualFolders = computed(() => folders.value.filter(folder => folder.system_key !== AI_QUICK_CAPTURE_FOLDER_KEY))
 
 // ---------- 手动录入 ----------
 const manualKind = ref<EntryKind>('event')

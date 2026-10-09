@@ -7,52 +7,37 @@
 
     <div class="kb-toolbar">
       <p class="hint">
-        支持 Markdown / 网页 / Word / PPT / Excel。收录时可写下原因，读完可记录感受；AI 总结与延伸只在你点按钮时进行。
+        支持 Markdown / 网页 / Word / PPT / Excel。Markdown 与文本资料可直接排版预览并显示图片；文件夹能改名、加标签和排序。AI 总结与拟定标题都只在你点按钮时进行，且要你确认后才写入。
       </p>
-      <button class="secondary" @click="creatingFolder = true">
-        <Icon name="plus" :size="15" />新建文件夹
-      </button>
       <button class="secondary" :disabled="importingConversations" @click="importConversations">
         <Icon name="inbox" :size="15" />{{ importingConversations ? '导入中…' : '导入 AI 对话' }}
       </button>
     </div>
     <p v-if="importMessage" :class="importOk ? 'msg ok' : 'msg err'">{{ importMessage }}</p>
+    <p v-else-if="folderMessage" class="msg err">{{ folderMessage }}</p>
 
     <div class="kb-body">
-      <!-- 文件夹列表 -->
-      <aside class="folders card">
-        <div class="section-label">文件夹</div>
-        <div
-          v-for="f in folders"
-          :key="f.id"
-          class="folder"
-          :class="{ on: currentFolder?.id === f.id }"
-          @click="selectFolder(f)"
-        >
-          <Icon name="folder" :size="16" />
-          <span class="f-name">{{ f.name }}</span>
-          <button v-if="f.system_key !== AI_QUICK_CAPTURE_FOLDER_KEY" class="ghost icon-btn" title="删除文件夹" @click.stop="removeFolder(f)">
-            <Icon name="trash" :size="14" />
-          </button>
-        </div>
-        <div v-if="!folders.length" class="arch-empty">还没有文件夹</div>
+      <KbFolderList
+        :folders="folders"
+        :current-id="currentFolder?.id ?? null"
+        :busy="folderBusy"
+        @select="selectFolder"
+        @create="createFolder"
+        @rename="renameFolder"
+        @remove="askDeleteFolder"
+        @reorder="reorderFolders"
+      />
 
-        <div v-if="creatingFolder" class="new-folder">
-          <input v-model="newFolderName" placeholder="文件夹名" :aria-invalid="!!newFolderError" @input="folderMessage = ''" @keyup.enter="createFolder" />
-          <p v-if="newFolderError || folderMessage" class="msg err folder-error">{{ newFolderError || folderMessage }}</p>
-          <div class="row" style="margin-top: 8px">
-            <button class="primary small" :disabled="!!newFolderError" @click="createFolder">创建</button>
-            <button class="ghost small" @click="cancelCreateFolder">取消</button>
-          </div>
-        </div>
-      </aside>
-
-      <!-- 资料列表 -->
       <section class="items">
         <template v-if="currentFolder">
           <div class="items-toolbar">
-            <h3>{{ currentFolder.name }}</h3>
-            <div v-if="!isAiQuickCaptureFolder" class="row">
+            <h3>
+              {{ currentFolder.name }}
+              <span v-if="folderCreatedText" class="folder-created" title="文件夹的创建时间">
+                <Icon name="clock" :size="12" />创建时间 {{ folderCreatedText }}
+              </span>
+            </h3>
+            <div v-if="!isCurrentAiFolder" class="row">
               <button class="secondary small" :disabled="importingFiles" @click="importFiles">
                 <Icon name="inbox" :size="15" />{{ importingFiles ? '导入中…' : '导入文件' }}
               </button>
@@ -64,41 +49,66 @@
                 {{ extending ? 'AI 延伸中…' : 'AI 延伸' }}
               </button>
             </div>
-            <span v-else class="system-folder-note">仅 AI 快速记录可写入</span>
+            <span v-else class="system-folder-note">仅 AI 快速记录可写入，资料正文只读</span>
           </div>
 
-          <p v-if="fileImportMessage" :class="fileImportOk ? 'msg ok' : 'msg err'">{{ fileImportMessage }}</p>
-
-          <div v-if="extendResult" class="card accent">
-            <h3>AI 延伸结果</h3>
-            <pre class="ai-text">{{ extendResult }}</pre>
-            <div class="row">
-              <button class="secondary small" @click="saveExtendAsItem">存为新资料</button>
-              <button class="ghost small" @click="extendResult = ''">关闭</button>
-            </div>
+          <div class="folder-tag-row">
+            <span class="tags-scope"><Icon name="tag" :size="11" />文件夹标签</span>
+            <KbTagEditor
+              :tags="currentFolder.tags ?? []"
+              :label="`文件夹「${currentFolder.name}」`"
+              :busy="folderBusy"
+              @change="saveFolderTags"
+            />
           </div>
 
-          <article v-for="it in items" :key="it.id" class="item card" @click="openItem(it)">
-            <div class="item-head">
-              <span class="tag">{{ typeLabel(it.source_type) }}</span>
-              <strong>{{ it.title }}</strong>
-              <button class="ghost icon-btn" title="删除" @click.stop="removeItem(it)">
-                <Icon name="trash" :size="14" />
-              </button>
+          <div class="items-scroll">
+            <p v-if="fileImportMessage" :class="fileImportOk ? 'msg ok' : 'msg err'">{{ fileImportMessage }}</p>
+            <p v-if="itemError" class="msg err">{{ itemError }}</p>
+
+            <div v-if="extendResult" class="card accent">
+              <h3>AI 延伸结果</h3>
+              <pre class="ai-text">{{ extendResult }}</pre>
+              <div class="row">
+                <button class="secondary small" @click="saveExtendAsItem">存为新资料</button>
+                <button class="ghost small" @click="extendResult = ''">关闭</button>
+              </div>
             </div>
-            <p v-if="it.reason" class="reason">收录原因：{{ it.reason }}</p>
-            <p v-if="it.reflection" class="reflection">我的感受：{{ it.reflection }}</p>
-            <p v-if="it.ai_summary" class="summary">AI 摘要：{{ it.ai_summary.slice(0, 120) }}{{ it.ai_summary.length > 120 ? '…' : '' }}</p>
-          </article>
-          <div v-if="!items.length" class="empty">
-            <h3>这个文件夹还是空的</h3>
-            <p>{{ isAiQuickCaptureFolder ? '在记录页面保存 AI 快速记录后，资料会出现在这里。' : '导入文件或手动添加一条资料。' }}</p>
+
+            <article v-for="it in items" :key="it.id" class="item card" @click="openItem(it)">
+              <div class="item-head">
+                <span class="item-type">{{ typeLabel(it.source_type) }}</span>
+                <strong>{{ it.title }}</strong>
+                <button class="ghost icon-btn" title="删除资料" aria-label="删除资料" @click.stop="askDeleteItem(it)">
+                  <Icon name="trash" :size="14" />
+                </button>
+              </div>
+
+              <div v-if="itemTags(it).length" class="item-tags">
+                <span v-for="tag in itemTags(it)" :key="tag" class="tag item-tag">{{ tag }}</span>
+              </div>
+
+              <p v-if="it.reason" class="reason">收录原因：{{ it.reason }}</p>
+              <p v-if="it.reflection" class="reflection">我的感受：{{ it.reflection }}</p>
+              <p v-if="it.ai_summary" class="summary">AI 摘要：{{ it.ai_summary }}</p>
+              <div class="item-meta">
+                <span><Icon name="clock" :size="11" />{{ createdText(it) }}</span>
+                <span v-if="updatedText(it)">· 修改于 {{ updatedText(it) }}</span>
+                <span v-if="isItemBodyLocked(it, folders)" class="meta-locked">正文只读</span>
+              </div>
+            </article>
+            <div v-if="!items.length" class="empty">
+              <h3>这个文件夹还是空的</h3>
+              <p>{{ isCurrentAiFolder ? '在记录页面保存 AI 快速记录后，资料会出现在这里。' : '导入文件或手动添加一条资料。' }}</p>
+            </div>
           </div>
         </template>
 
-        <div v-else class="empty">
-          <h3>选择一个文件夹</h3>
-          <p>或者新建一个，开始收集值得留下的内容。</p>
+        <div v-else class="items-scroll">
+          <div class="empty">
+            <h3>选择一个文件夹</h3>
+            <p>或者新建一个，开始收集值得留下的内容。</p>
+          </div>
         </div>
       </section>
     </div>
@@ -108,7 +118,7 @@
       <div class="drawer">
         <div class="drawer-head">
           <h3 style="margin: 0">手动添加资料</h3>
-          <button class="close" @click="creatingItem = false"><Icon name="close" :size="16" /></button>
+          <button class="close" aria-label="关闭" @click="creatingItem = false"><Icon name="close" :size="16" /></button>
         </div>
         <div class="field">
           <label>标题（必填）</label>
@@ -126,105 +136,93 @@
           <button class="primary" :disabled="!newItem.title.trim() || !newItem.body.trim()" @click="createItem">保存</button>
           <button class="ghost" @click="creatingItem = false">取消</button>
         </div>
-        <p v-if="itemMessage" :class="itemOk ? 'msg ok' : 'msg err'">{{ itemMessage }}</p>
+        <p v-if="newItemError" class="msg err">{{ newItemError }}</p>
       </div>
     </div>
 
-    <!-- 资料详情 -->
-    <div v-if="detail" class="drawer-mask" @click.self="detail = null">
-      <div class="drawer wide">
-        <div class="drawer-head">
-          <span class="tag">{{ typeLabel(detail.source_type) }}</span>
-          <strong class="detail-title">{{ detail.title }}</strong>
-          <button class="close" @click="detail = null"><Icon name="close" :size="16" /></button>
-        </div>
-        <div v-if="detail.file_path" class="hint path">{{ detail.file_path }}</div>
+    <KbItemDetail
+      v-if="detail"
+      :key="detail.id"
+      :item="detail"
+      :body-locked="isDetailBodyLocked"
+      @closed="detail = null"
+      @changed="refreshList"
+    />
 
-        <div class="field">
-          <label>内容（可编辑）</label>
-          <textarea v-model="detailBody" rows="10" />
+    <!-- 删除确认：与记录页归档弹窗同一套视觉，不再用系统 confirm -->
+    <div v-if="pendingDelete" class="drawer-mask" @click.self="closeDeleteDialog">
+      <section
+        class="confirm-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="kb-delete-title"
+        aria-describedby="kb-delete-desc"
+        @keydown.esc="closeDeleteDialog"
+      >
+        <div class="confirm-icon"><Icon name="trash" :size="20" /></div>
+        <div class="confirm-copy">
+          <h3 id="kb-delete-title">{{ pendingDelete.title }}</h3>
+          <p id="kb-delete-desc">{{ pendingDelete.description }}</p>
         </div>
-        <div class="field">
-          <label>收录原因（可编辑）</label>
-          <input v-model="detailReason" />
-        </div>
-        <div class="row" style="margin-bottom: 14px">
-          <button class="primary small" @click="saveDetail">保存修改</button>
-          <button class="secondary small" :disabled="summarizing" @click="summarize">
-            <Icon name="sparkles" :size="15" />
-            {{ summarizing ? 'AI 总结中…' : 'AI 一键总结' }}
+        <div class="confirm-actions">
+          <button ref="deleteCancelButton" class="ghost" type="button" :disabled="deleting" @click="closeDeleteDialog">取消</button>
+          <button class="danger" type="button" :disabled="deleting" @click="confirmDelete">
+            {{ deleting ? '正在删除…' : '删除' }}
           </button>
-          <span v-if="detailMessage" :class="detailOk ? 'msg ok inline' : 'msg err inline'">{{ detailMessage }}</span>
         </div>
-
-        <div v-if="detail.ai_summary" class="card accent">
-          <h3>AI 总结</h3>
-          <pre class="ai-text">{{ detail.ai_summary }}</pre>
-        </div>
-
-        <div class="field">
-          <label>我的感受（你自己的话，AI 不会代写）</label>
-          <textarea v-model="detailReflection" rows="3" placeholder="这份资料让你想到了什么？" />
-        </div>
-        <button class="primary small" @click="saveReflection">保存感受</button>
-        <span v-if="reflectionMessage" :class="reflectionOk ? 'msg ok inline' : 'msg err inline'" style="margin-left: 8px">{{ reflectionMessage }}</span>
-      </div>
+      </section>
     </div>
+
+    <transition name="toast">
+      <div v-if="actionToast" class="action-toast" role="status">
+        <Icon name="check" :size="15" />{{ actionToast }}
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, reactive } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '../components/Icon.vue'
-
-const AI_QUICK_CAPTURE_FOLDER_KEY = 'ai_quick_capture'
-
-interface KbFolder {
-  id: number
-  name: string
-  description: string
-  system_key: string | null
-  created_at: string
-}
-interface KbItem {
-  id: number
-  folder_id: number
-  title: string
-  source_type: string
-  body: string
-  file_path: string
-  reason: string
-  reflection: string
-  ai_summary: string
-  source_entry_id: number | null
-  import_key: string | null
-  created_at: string
-  updated_at: string
-}
+import KbFolderList from '../components/kb/KbFolderList.vue'
+import KbItemDetail from '../components/kb/KbItemDetail.vue'
+import KbTagEditor from '../components/kb/KbTagEditor.vue'
+import {
+  isAiQuickCaptureFolder,
+  isItemBodyLocked,
+  itemTags,
+  typeLabel,
+  type KbFolder,
+  type KbItem
+} from '../utils/knowledge'
+import { formatSqlDateTime } from '../utils/datetime'
 
 const folders = ref<KbFolder[]>([])
 const route = useRoute()
 const currentFolder = ref<KbFolder | null>(null)
 const items = ref<KbItem[]>([])
-
-const creatingFolder = ref(false)
-const newFolderName = ref('')
+const folderBusy = ref(false)
+// 顶部行内提示只放失败信息：错误不该几秒后自己消失
 const folderMessage = ref('')
+const actionToast = ref('')
+let actionToastTimer: ReturnType<typeof setTimeout> | undefined
+
+function showActionToast(message: string): void {
+  actionToast.value = message
+  if (actionToastTimer) clearTimeout(actionToastTimer)
+  actionToastTimer = setTimeout(() => { actionToast.value = '' }, 2600)
+}
+
+onBeforeUnmount(() => {
+  if (actionToastTimer) clearTimeout(actionToastTimer)
+})
+
 const creatingItem = ref(false)
 const newItem = reactive({ title: '', body: '', reason: '' })
-const itemMessage = ref('')
-const itemOk = ref(false)
+const newItemError = ref('')
 
 const detail = ref<KbItem | null>(null)
-const detailBody = ref('')
-const detailReason = ref('')
-const detailReflection = ref('')
-const detailMessage = ref('')
-const detailOk = ref(false)
-const reflectionMessage = ref('')
-const reflectionOk = ref(false)
-const summarizing = ref(false)
 
 const extending = ref(false)
 const extendResult = ref('')
@@ -234,30 +232,18 @@ const importOk = ref(false)
 const importingFiles = ref(false)
 const fileImportMessage = ref('')
 const fileImportOk = ref(false)
-const isAiQuickCaptureFolder = computed(() => currentFolder.value?.system_key === AI_QUICK_CAPTURE_FOLDER_KEY)
-const newFolderError = computed(() => {
-  const name = newFolderName.value.trim()
-  if (!name) return '请输入文件夹名'
-  if (name.normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase() === 'ai快速记录'.toLocaleLowerCase()) {
-    return '“AI 快速记录”是系统保留名称'
-  }
-  return ''
-})
+const itemError = ref('')
 
-const TYPE_LABELS: Record<string, string> = {
-  markdown: 'Markdown',
-  md: 'Markdown',
-  txt: '文本',
-  html: '网页',
-  htm: '网页',
-  docx: 'Word',
-  pptx: 'PPT',
-  xlsx: 'Excel',
-  'ai-conversation': 'AI 对话',
-  entry: 'AI 记录'
+const isCurrentAiFolder = computed(() => isAiQuickCaptureFolder(currentFolder.value))
+const isDetailBodyLocked = computed(() => isItemBodyLocked(detail.value, folders.value))
+const folderCreatedText = computed(() => formatSqlDateTime(currentFolder.value?.created_at))
+
+function createdText(item: KbItem): string {
+  return formatSqlDateTime(item.created_at) || '收录时间未知'
 }
-function typeLabel(t: string): string {
-  return TYPE_LABELS[t] ?? t
+function updatedText(item: KbItem): string {
+  if (!item.updated_at || item.updated_at === item.created_at) return ''
+  return formatSqlDateTime(item.updated_at)
 }
 
 async function loadFolders(): Promise<void> {
@@ -277,64 +263,135 @@ async function selectFolder(f: KbFolder): Promise<void> {
   currentFolder.value = f
   extendResult.value = ''
   fileImportMessage.value = ''
+  folderMessage.value = ''
   items.value = await window.api.kb.listItems(f.id)
 }
 
-async function createFolder(): Promise<void> {
-  if (newFolderError.value) return
+/** 文件夹操作统一走这里：出错时把数据层的中文原因原样显示在顶部 */
+async function runFolderAction(action: () => Promise<{ ok: boolean; error?: string }>): Promise<boolean> {
+  folderBusy.value = true
   folderMessage.value = ''
+  actionToast.value = ''
   try {
-    const r = await window.api.kb.addFolder(newFolderName.value)
-    if (r.ok) {
-      cancelCreateFolder()
-      await loadFolders()
-    } else {
-      folderMessage.value = r.error || '创建失败'
-    }
+    const r = await action()
+    if (!r.ok) folderMessage.value = r.error || '操作失败'
+    return r.ok
   } catch (error) {
-    folderMessage.value = error instanceof Error ? error.message : '创建失败'
+    folderMessage.value = error instanceof Error ? error.message : '操作失败'
+    return false
+  } finally {
+    folderBusy.value = false
   }
 }
 
-function cancelCreateFolder(): void {
-  creatingFolder.value = false
-  newFolderName.value = ''
-  folderMessage.value = ''
+async function createFolder(name: string): Promise<void> {
+  if (await runFolderAction(() => window.api.kb.addFolder(name))) {
+    await loadFolders()
+    showActionToast(`已新建文件夹「${name}」`)
+  }
+}
+
+async function renameFolder(folder: KbFolder, name: string, description: string): Promise<void> {
+  if (name === folder.name && description === folder.description) return
+  if (await runFolderAction(() => window.api.kb.renameFolder(folder.id, name, description))) {
+    await loadFolders()
+    showActionToast(`文件夹已改名为「${name}」`)
+  }
+}
+
+async function setFolderTags(folder: KbFolder, tags: string[]): Promise<void> {
+  if (await runFolderAction(() => window.api.kb.setFolderTags(folder.id, tags))) await loadFolders()
+}
+
+/** 工具条上的文件夹标签输入框：当前文件夹在这里取，模板不必处理 null */
+async function saveFolderTags(tags: string[]): Promise<void> {
+  const folder = currentFolder.value
+  if (folder) await setFolderTags(folder, tags)
+}
+
+async function reorderFolders(orderedIds: number[]): Promise<void> {
+  if (await runFolderAction(() => window.api.kb.reorderFolders(orderedIds))) await loadFolders()
+}
+
+/** 删除先过确认框：系统 confirm 的样式与全应用脱节，这里跟记录页归档弹窗同一套 */
+interface DeleteRequest { title: string; description: string; run: () => Promise<void> }
+const pendingDelete = ref<DeleteRequest | null>(null)
+const deleting = ref(false)
+const deleteCancelButton = ref<HTMLButtonElement>()
+
+function askDelete(request: DeleteRequest): void {
+  pendingDelete.value = request
+  // 焦点放在「取消」上：回车不该等于删掉东西
+  void nextTick(() => { deleteCancelButton.value?.focus() })
+}
+
+function askDeleteFolder(f: KbFolder): void {
+  askDelete({
+    title: `删除文件夹「${f.name}」`,
+    description: '文件夹里的资料会一起删除，删除后不可恢复。',
+    run: () => removeFolder(f)
+  })
+}
+
+function askDeleteItem(it: KbItem): void {
+  askDelete({
+    title: `删除资料「${it.title}」`,
+    description: '这条资料删除后不可恢复。',
+    run: () => removeItem(it)
+  })
+}
+
+function closeDeleteDialog(): void {
+  if (deleting.value) return
+  pendingDelete.value = null
+}
+
+async function confirmDelete(): Promise<void> {
+  const request = pendingDelete.value
+  if (!request) return
+  deleting.value = true
+  try {
+    await request.run()
+  } catch (error) {
+    itemError.value = error instanceof Error ? error.message : '删除失败'
+  } finally {
+    deleting.value = false
+    pendingDelete.value = null
+  }
 }
 
 async function removeFolder(f: KbFolder): Promise<void> {
-  if (!confirm(`删除文件夹「${f.name}」及其全部资料？不可恢复。`)) return
-  await window.api.kb.deleteFolder(f.id)
+  if (!await runFolderAction(() => window.api.kb.deleteFolder(f.id))) return
   if (currentFolder.value?.id === f.id) {
     currentFolder.value = null
     items.value = []
+    detail.value = null
   }
   await loadFolders()
+  showActionToast(`已删除文件夹「${f.name}」`)
 }
 
 async function createItem(): Promise<void> {
   if (!currentFolder.value || !newItem.title.trim() || !newItem.body.trim()) return
-  itemMessage.value = ''
+  newItemError.value = ''
   const r = await window.api.kb.addItem(
     currentFolder.value.id,
     { title: newItem.title.trim(), sourceType: 'markdown', reason: newItem.reason },
     newItem.body.trim()
   )
   if (r.ok) {
-    itemOk.value = true
     creatingItem.value = false
     newItem.title = ''
     newItem.body = ''
     newItem.reason = ''
-    items.value = await window.api.kb.listItems(currentFolder.value.id)
+    await refreshList()
   } else {
-    itemOk.value = false
-    itemMessage.value = r.error || '保存失败'
+    newItemError.value = r.error || '保存失败'
   }
 }
 
 async function importFiles(): Promise<void> {
-  if (!currentFolder.value || isAiQuickCaptureFolder.value) return
+  if (!currentFolder.value || isCurrentAiFolder.value) return
   importingFiles.value = true
   fileImportMessage.value = ''
   try {
@@ -378,87 +435,22 @@ async function importConversations(): Promise<void> {
 }
 
 function openItem(it: KbItem): void {
-  detail.value = it
-  detailBody.value = it.body
-  detailReason.value = it.reason
-  detailReflection.value = it.reflection
-  detailMessage.value = ''
-  reflectionMessage.value = ''
-}
-
-async function saveDetail(): Promise<void> {
-  if (!detail.value) return
-  detailMessage.value = ''
-  detailOk.value = false
-  try {
-    const result = await window.api.kb.updateItem(detail.value.id, { body: detailBody.value, reason: detailReason.value })
-    const saved = result.item as KbItem | null | undefined
-    if (!result.ok || !saved) {
-      detailMessage.value = result.error || '保存修改失败'
-      return
-    }
-    if (saved.body !== detailBody.value || saved.reason !== detailReason.value) {
-      detailMessage.value = '保存结果校验失败，请重试'
-      return
-    }
-    detail.value = saved
-    detailOk.value = true
-    detailMessage.value = '修改已保存 ✓'
-    await refreshList()
-  } catch (error) {
-    detailMessage.value = error instanceof Error ? error.message : '保存修改失败'
-  }
-}
-
-async function saveReflection(): Promise<void> {
-  if (!detail.value) return
-  reflectionMessage.value = ''
-  reflectionOk.value = false
-  try {
-    const result = await window.api.kb.updateReflection(detail.value.id, detailReflection.value)
-    const saved = result.item as KbItem | null | undefined
-    if (!result.ok || !saved) {
-      reflectionMessage.value = result.error || '保存感受失败'
-      return
-    }
-    if (saved.reflection !== detailReflection.value) {
-      reflectionMessage.value = '保存结果校验失败，请重试'
-      return
-    }
-    detail.value = saved
-    reflectionOk.value = true
-    reflectionMessage.value = '感受已保存 ✓'
-    await refreshList()
-  } catch (error) {
-    reflectionMessage.value = error instanceof Error ? error.message : '保存感受失败'
-  }
-}
-
-async function summarize(): Promise<void> {
-  if (!detail.value) return
-  summarizing.value = true
-  try {
-    const r = await window.api.kb.summarize(detail.value.id)
-    if (r.ok && r.summary) {
-      detail.value.ai_summary = r.summary
-    } else {
-      alert(`总结失败：${r.error}`)
-    }
-  } finally {
-    summarizing.value = false
-  }
+  // 浅拷贝：详情里改草稿不能顺带改写列表行
+  detail.value = { ...it }
+  itemError.value = ''
 }
 
 async function extendFolder(): Promise<void> {
   if (!currentFolder.value) return
   extending.value = true
   extendResult.value = ''
+  itemError.value = ''
   try {
     const r = await window.api.kb.extend(currentFolder.value.id)
     if (r.ok && r.text) {
       extendResult.value = r.text
     } else {
-      alert(`延伸失败：${r.error}`)
+      itemError.value = `延伸失败：${r.error || '模型没有返回内容'}`
     }
   } finally {
     extending.value = false
@@ -467,7 +459,7 @@ async function extendFolder(): Promise<void> {
 
 async function saveExtendAsItem(): Promise<void> {
   if (!currentFolder.value || !extendResult.value) return
-  await window.api.kb.addItem(
+  const r = await window.api.kb.addItem(
     currentFolder.value.id,
     {
       title: `AI 延伸 ${new Date().toLocaleDateString('zh-CN')}`,
@@ -477,15 +469,19 @@ async function saveExtendAsItem(): Promise<void> {
     },
     extendResult.value
   )
+  if (!r.ok) {
+    itemError.value = r.error || '保存延伸结果失败'
+    return
+  }
   extendResult.value = ''
-  items.value = await window.api.kb.listItems(currentFolder.value.id)
+  await refreshList()
 }
 
 async function removeItem(it: KbItem): Promise<void> {
-  if (!confirm(`删除资料「${it.title}」？不可恢复。`)) return
   await window.api.kb.deleteItem(it.id)
   if (detail.value?.id === it.id) detail.value = null
   await refreshList()
+  showActionToast(`已删除资料「${it.title}」`)
 }
 
 async function refreshList(): Promise<void> {
@@ -509,31 +505,29 @@ onMounted(async () => {
   display: flex; justify-content: space-between; align-items: flex-start;
   gap: 14px; margin-bottom: 16px;
 }
-.kb-toolbar .hint { max-width: 640px; }
-.kb-body { display: flex; gap: 18px; align-items: flex-start; }
+.kb-toolbar .hint { max-width: 560px; }
+/* 整页固定：页面撑满可用高度，滚动只发生在文件夹列表和资料列表内部 */
+.page { display: flex; flex-direction: column; min-height: 0; }
+.kb-body { flex: 1; min-height: 0; display: flex; gap: 18px; align-items: stretch; }
 
-.folders { width: 220px; flex: 0 0 220px; padding: 14px; }
-.folder {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px; border-radius: var(--r);
-  cursor: pointer; color: var(--text-2); font-size: 13.5px;
-}
-.folder:hover { background: var(--surface-2); color: var(--text); }
-.folder.on { background: var(--accent-weak); color: var(--accent-text); font-weight: 600; }
-.f-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.folder .icon-btn { opacity: 0; }
-.folder:hover .icon-btn, .folder.on .icon-btn { opacity: 1; }
-.arch-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 10px; }
-.new-folder { padding: 8px 4px 2px; }
-
-.items { flex: 1; min-width: 0; }
+.items { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.items-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 .items-toolbar {
   display: flex; justify-content: space-between; align-items: center;
   gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
 }
-.items-toolbar h3 { margin: 0; font-size: 15px; }
+.items-toolbar h3 { margin: 0; font-size: 15px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+/* 创建时间跟在文件夹名后，刻意比标题轻一档，免得被当成名字的一部分 */
+.folder-created {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 400; color: var(--text-3);
+}
+/* 文件夹标签在这里改；资料标签只在详情抽屉里改 */
+.folder-tag-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: -4px 0 12px;
+}
 .system-folder-note { color: var(--text-3); font-size: 12.5px; }
-.folder-error { margin: 6px 0 0; font-size: 12px; }
 
 .item { cursor: pointer; }
 .item:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
@@ -541,22 +535,71 @@ onMounted(async () => {
 .item-head strong { flex: 1; font-size: 14px; }
 .item-head .icon-btn { opacity: 0; }
 .item:hover .icon-btn { opacity: 1; }
+/* 类型是自动生成的元信息，用纯文字；芯片只留给用户自己贴的标签 */
+.item-type {
+  flex: 0 0 auto; font-size: 11px; color: var(--text-3);
+  letter-spacing: 0.02em; white-space: nowrap;
+}
+/* 标签只在详情抽屉里编辑，卡片只负责展示已有标签 */
+.item-tags {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 7px;
+}
+.item-tag { font-size: 10.5px; padding: 0 6px; }
+.tags-scope { font-size: 10.5px; color: var(--text-3); flex: 0 0 auto; }
 .reason { color: var(--warn); font-size: 12.5px; margin: 6px 0 0; }
 .reflection { color: var(--ok); font-size: 12.5px; margin: 4px 0 0; }
-.summary { color: var(--text-3); font-size: 12.5px; margin: 4px 0 0; }
+.summary {
+  color: var(--text-3); font-size: 12.5px; margin: 4px 0 0;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  line-clamp: 2; overflow: hidden;
+}
+.item-meta {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 8px; font-size: 11px; color: var(--text-3);
+}
+.item-meta span { display: inline-flex; align-items: center; gap: 3px; }
+.meta-locked { color: var(--text-2); }
 
 .ai-text {
   font-family: var(--font-sans); white-space: pre-wrap; word-break: break-word;
   margin: 0 0 10px; font-size: 13.5px; line-height: 1.7;
 }
-.detail-title { font-size: 15px; flex: 1; }
-.path {
-  font-family: var(--font-mono); font-size: 11.5px;
-  word-break: break-all; margin-bottom: 14px;
+
+/* 右下角成功浮窗：位置同报告页，配色同记录页的成功提示 */
+.action-toast {
+  position: fixed; z-index: 90; bottom: 22px; right: 26px;
+  display: flex; align-items: center; gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 14px; border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border));
+  background: var(--surface); color: var(--ok);
+  box-shadow: var(--shadow-lg); font-size: 13px;
 }
+/* 确认框：与记录页 .clear-dialog 同一套尺寸与配色 */
+.confirm-dialog {
+  display: grid; grid-template-columns: auto 1fr; gap: 12px 14px;
+  width: min(420px, calc(100vw - 32px)); padding: 20px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); box-shadow: var(--shadow-lg);
+}
+.confirm-icon {
+  display: grid; place-items: center; width: 38px; height: 38px;
+  border-radius: var(--r); color: var(--danger); background: var(--danger-weak);
+}
+.confirm-copy h3 { margin: 1px 0 7px; font-size: 16px; }
+.confirm-copy p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.65; }
+.confirm-actions {
+  grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;
+}
+.toast-enter-active, .toast-leave-active { transition: opacity 0.2s var(--ease), transform 0.2s var(--ease); }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(6px); }
 
 @media (max-width: 820px) {
-  .kb-body { flex-direction: column; }
-  .folders { width: 100%; flex: none; }
+  /* 堆叠后固定高度会把两栏挤扁，这一档退回整页滚动 */
+  .page { display: block; height: auto; }
+  .kb-body { display: block; }
+  .items { display: block; }
+  .items-scroll { overflow: visible; }
+  .kb-toolbar { flex-direction: column; }
 }
 </style>

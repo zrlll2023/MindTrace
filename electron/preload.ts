@@ -99,6 +99,8 @@ const api = {
     addFolder: (name: string, description?: string) => ipcRenderer.invoke('kb:addFolder', name, description),
     renameFolder: (id: number, name: string, description?: string) =>
       ipcRenderer.invoke('kb:renameFolder', id, name, description),
+    reorderFolders: (orderedIds: number[]) => ipcRenderer.invoke('kb:reorderFolders', orderedIds),
+    setFolderTags: (id: number, tags: string[]) => ipcRenderer.invoke('kb:setFolderTags', id, tags),
     deleteFolder: (id: number) => ipcRenderer.invoke('kb:deleteFolder', id),
     listItems: (folderId: number) => ipcRenderer.invoke('kb:listItems', folderId),
     getItem: (id: number) => ipcRenderer.invoke('kb:getItem', id),
@@ -107,11 +109,19 @@ const api = {
     findItemsForEntries: (entryIds: number[]) => ipcRenderer.invoke('kb:findItemsForEntries', entryIds),
     updateItem: (id: number, patch: { title?: string; body?: string; reason?: string }) =>
       ipcRenderer.invoke('kb:updateItem', id, patch),
+    setItemTitle: (id: number, title: string) => ipcRenderer.invoke('kb:setItemTitle', id, title),
+    setItemTags: (id: number, tags: string[]) => ipcRenderer.invoke('kb:setItemTags', id, tags),
+    suggestTitle: (itemId: number) => ipcRenderer.invoke('kb:suggestTitle', itemId),
     updateReflection: (id: number, text: string) => ipcRenderer.invoke('kb:updateReflection', id, text),
     deleteItem: (id: number) => ipcRenderer.invoke('kb:deleteItem', id),
     summarize: (itemId: number) => ipcRenderer.invoke('kb:summarize', itemId),
     extend: (folderId: number) => ipcRenderer.invoke('kb:extend', folderId),
-    importFiles: (folderId: number, reason?: string) => ipcRenderer.invoke('kb:importFiles', folderId, reason)
+    importFiles: (folderId: number, reason?: string) => ipcRenderer.invoke('kb:importFiles', folderId, reason),
+    saveImageAsset: (payload: { dataBase64: string; fileName: string }) => ipcRenderer.invoke('kb:saveImageAsset', payload),
+    exportItem: (itemId: number) => ipcRenderer.invoke('kb:exportItem', itemId)
+  },
+  external: {
+    openUrl: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
   },
   labs: {
     metrics: (dateFrom: string, dateTo: string) => ipcRenderer.invoke('labs:metrics', dateFrom, dateTo),

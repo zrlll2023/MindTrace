@@ -698,9 +698,9 @@ export function registerIpcHandlers(): void {
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
     const kb = new KnowledgeBase(getContext().repo.getDb())
     try {
-      kb.renameFolder(id, name, description)
+      const folder = kb.renameFolder(id, name, description?.trim() ?? undefined)
       getContext().repo.save()
-      return { ok: true }
+      return { ok: true, folder }
     } catch (error) {
       return { ok: false, error: (error as Error).message }
     }
@@ -709,10 +709,39 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('kb:deleteFolder', (_e, id: number) => {
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
     const kb = new KnowledgeBase(getContext().repo.getDb())
-    if (kb.isAiQuickCaptureFolder(id)) return { ok: false, error: 'AI 快速记录文件夹不允许删除' }
-    kb.deleteFolder(id)
-    getContext().repo.save()
-    return { ok: true }
+    try {
+      kb.deleteFolder(id)
+      getContext().repo.save()
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || '删除文件夹失败' }
+    }
+  })
+
+  /** 手动顺序：界面提交完整的 id 序列，数据层按序号写回 */
+  ipcMain.handle('kb:reorderFolders', (_e, orderedIds: number[]) => {
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(getContext().repo.getDb())
+    if (!Array.isArray(orderedIds)) return { ok: false, error: '排序参数无效' }
+    try {
+      kb.reorderFolders(orderedIds.map(Number))
+      getContext().repo.save()
+      return { ok: true, folders: kb.listFolders() }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || '调整顺序失败' }
+    }
+  })
+
+  ipcMain.handle('kb:setFolderTags', (_e, id: number, tags: string[]) => {
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(getContext().repo.getDb())
+    try {
+      const folder = kb.setFolderTags(id, tags)
+      getContext().repo.save()
+      return { ok: true, folder }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || '保存标签失败' }
+    }
   })
 
   ipcMain.handle('kb:listItems', (_e, folderId: number) => {
@@ -762,11 +791,71 @@ export function registerIpcHandlers(): void {
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
     const kb = new KnowledgeBase(c.repo.getDb())
     try {
-      if (!kb.updateItem(id, patch)) return { ok: false, error: '对应的知识资料不存在，可能已被删除' }
+      const r = kb.updateItem(id, patch)
+      if (r.status === 'missing') return { ok: false, error: '对应的知识资料不存在，可能已被删除' }
+      if (r.status === 'locked') return { ok: false, error: 'AI 快速记录的资料正文不可修改，可补充收录原因和感受' }
+      if (r.status === 'unchanged') return { ok: true, changed: false, item: r.item }
       c.repo.save()
-      return { ok: true, item: kb.getItem(id) }
+      return { ok: true, changed: true, item: r.item }
     } catch (error) {
       return { ok: false, error: (error as Error).message || '保存修改失败' }
+    }
+  })
+
+  /** 资料标签：整理信息不写流水，但同样把「有没有真的改」如实告诉界面 */
+  ipcMain.handle('kb:setItemTags', (_e, id: number, tags: string[]) => {
+    const c = getContext()
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(c.repo.getDb())
+    try {
+      const r = kb.setItemTags(id, tags)
+      if (r.status === 'missing') return { ok: false, error: '对应的知识资料不存在，可能已被删除' }
+      if (r.status === 'unchanged') return { ok: true, changed: false, item: r.item }
+      c.repo.save()
+      return { ok: true, changed: true, item: r.item }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || '保存标签失败' }
+    }
+  })
+
+  /** 用户确认后的标题修改；数据层同时锁定标题，之后改正文不会覆盖它 */
+  ipcMain.handle('kb:setItemTitle', (_e, id: number, title: string) => {
+    const c = getContext()
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(c.repo.getDb())
+    try {
+      const r = kb.setItemTitle(id, String(title ?? ''))
+      if (r.status === 'missing') return { ok: false, error: '对应的知识资料不存在，可能已被删除' }
+      if (r.status === 'unchanged') return { ok: true, changed: false, item: r.item }
+      c.repo.save()
+      return { ok: true, changed: true, item: r.item }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || '保存标题失败' }
+    }
+  })
+
+  /** 根据资料正文给出候选标题：只返回建议，必须由用户点确认才写入 */
+  ipcMain.handle('kb:suggestTitle', async (_e, itemId: number) => {
+    const c = getContext()
+    const llm = c.getLlm()
+    if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商' }
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const kb = new KnowledgeBase(c.repo.getDb())
+    const item = kb.getItem(itemId)
+    if (!item) return { ok: false, error: '资料不存在' }
+    if (!item.body.trim()) return { ok: false, error: '资料正文为空，无法生成标题' }
+    try {
+      const { sanitizeText } = await import('../analysis/validators.js')
+      const raw = await llm.chat([
+        { role: 'system', content: '你是标题生成器。根据资料正文生成一个不超过 16 个汉字的简洁中文标题，概括这份资料的主题。只输出标题本身，不要引号、结尾标点或任何解释。' },
+        { role: 'user', content: `资料正文：\n${sanitizeText(item.body.slice(0, 600))}` }
+      ])
+      const title = raw.replace(/\s+/g, ' ').trim().replace(/^["'「『【]|["'」』】]$/g, '').slice(0, 24)
+      if (!title) return { ok: false, error: 'AI 未给出可用标题，请重试' }
+      return { ok: true, title }
+    } catch (error) {
+      logError('kb.suggest-title.failed', error)
+      return { ok: false, error: (error as Error).message || '生成标题失败' }
     }
   })
 
@@ -775,9 +864,11 @@ export function registerIpcHandlers(): void {
     const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
     const kb = new KnowledgeBase(c.repo.getDb())
     try {
-      if (!kb.updateReflection(id, text)) return { ok: false, error: '对应的知识资料不存在，可能已被删除' }
+      const r = kb.updateReflection(id, String(text ?? ''))
+      if (r.status === 'missing') return { ok: false, error: '对应的知识资料不存在，可能已被删除' }
+      if (r.status === 'unchanged') return { ok: true, changed: false, item: r.item }
       c.repo.save()
-      return { ok: true, item: kb.getItem(id) }
+      return { ok: true, changed: true, item: r.item }
     } catch (error) {
       return { ok: false, error: (error as Error).message || '保存感受失败' }
     }
@@ -846,7 +937,7 @@ export function registerIpcHandlers(): void {
       return { ok: true, canceled: true, imported: 0, items: [], failures: [] }
     }
     const { importKnowledgeFiles } = await import('../knowledge/import-files.js')
-    const result = importKnowledgeFiles(kb, folderId, r.filePaths, reason)
+    const result = importKnowledgeFiles(kb, c.dataDir, folderId, r.filePaths, reason)
     if (result.items.length) c.repo.save()
     if (!result.items.length && result.failures.length) {
       return {
@@ -864,6 +955,61 @@ export function registerIpcHandlers(): void {
       items: result.items,
       failures: result.failures
     }
+  })
+
+  /** 正文里粘贴 / 拖入的图片落进本地资源目录，返回可直接写进 markdown 的协议地址 */
+  ipcMain.handle('kb:saveImageAsset', (_e, payload: { dataBase64: string; fileName: string }) => {
+    const c = getContext()
+    const dataBase64 = String(payload?.dataBase64 ?? '')
+    if (!dataBase64) return { ok: false, error: '没有收到图片数据' }
+    if (dataBase64.length > 12_000_000) return { ok: false, error: '图片过大，单张请控制在 8MB 以内' }
+    try {
+      const bytes = new Uint8Array(Buffer.from(dataBase64, 'base64'))
+      if (!bytes.length) return { ok: false, error: '图片解码失败' }
+      const { writeAsset } = require('../knowledge/assets.js') as typeof import('../knowledge/assets')
+      const fileName = String(payload?.fileName ?? '')
+      const ext = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : 'png'
+      return { ok: true, ...writeAsset(c.dataDir, bytes, ext) }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message || '保存图片失败' }
+    }
+  })
+
+  /** 把资料正文另存为 .md，走与诊断包一致的保存对话框 */
+  ipcMain.handle('kb:exportItem', async (event, itemId: number) => {
+    const c = getContext()
+    const { KnowledgeBase } = require('../db/knowledge.js') as typeof import('../db/knowledge')
+    const item = new KnowledgeBase(c.repo.getDb()).getItem(itemId)
+    if (!item) return { ok: false, error: '资料不存在' }
+    const owner = senderWindow(event)
+    const options: Electron.SaveDialogOptions = {
+      title: '导出资料',
+      defaultPath: `${item.title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || '资料'}.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }]
+    }
+    const result = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options)
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+    try {
+      const fs = await import('node:fs')
+      const sections = [`# ${item.title}`, '', item.body]
+      if (item.reason) sections.push('', '> 收录原因：' + item.reason)
+      if (item.reflection) sections.push('', '> 我的感受：' + item.reflection)
+      if (item.ai_summary) sections.push('', '## AI 总结', '', item.ai_summary)
+      fs.writeFileSync(result.filePath, sections.join('\n'), 'utf8')
+      return { ok: true, canceled: false, path: result.filePath }
+    } catch (error) {
+      logError('kb.export-item.failed', error)
+      return { ok: false, canceled: false, error: (error as Error).message || '导出失败' }
+    }
+  })
+
+  /** 正文里的链接一律交给系统浏览器，应用自身绝不跳转 */
+  ipcMain.handle('shell:openExternal', (_e, url: string) => {
+    if (!/^https?:\/\//i.test(String(url ?? ''))) return { ok: false, error: '只允许打开网页链接' }
+    return shell.openExternal(url).then(
+      () => ({ ok: true }),
+      (error: unknown) => ({ ok: false, error: (error as Error).message || '无法打开链接' })
+    )
   })
 
   // ---------- labs（v3 实验性功能） ----------

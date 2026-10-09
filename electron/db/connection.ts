@@ -201,6 +201,26 @@ function migrate(db: Database): void {
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_kb_items_import_key ON kb_items(import_key) WHERE import_key IS NOT NULL')
   db.run('CREATE INDEX IF NOT EXISTS idx_kb_items_source_entry ON kb_items(source_entry_id)')
 
+  // 增量迁移：文件夹手动顺序与标签、资料标题锁定
+  // sort_order 用既有 id 回填，等价于升级前的显示顺序（原查询就是 ORDER BY id），老库不会突然乱序
+  if (folderCols.length && !folderCols[0].values.some(v => v[1] === 'sort_order')) {
+    db.run('ALTER TABLE kb_folders ADD COLUMN sort_order INTEGER')
+  }
+  if (folderCols.length && !folderCols[0].values.some(v => v[1] === 'tags')) {
+    db.run('ALTER TABLE kb_folders ADD COLUMN tags TEXT')
+  }
+  db.run('UPDATE kb_folders SET sort_order = id WHERE sort_order IS NULL')
+  db.run('CREATE INDEX IF NOT EXISTS idx_kb_folders_sort ON kb_folders(sort_order, id)')
+
+  if (itemCols.length && !itemCols[0].values.some(v => v[1] === 'title_locked')) {
+    db.run('ALTER TABLE kb_items ADD COLUMN title_locked INTEGER')
+  }
+  db.run('UPDATE kb_items SET title_locked = 0 WHERE title_locked IS NULL')
+  // 资料自己的标签：与文件夹标签一样存 JSON 文本，历史行为 NULL 时读取侧容错成空数组
+  if (itemCols.length && !itemCols[0].values.some(v => v[1] === 'tags')) {
+    db.run('ALTER TABLE kb_items ADD COLUMN tags TEXT')
+  }
+
   // ---------- 知识库操作流水（供时间线回溯「哪天动了哪些资料」）----------
   db.run(`CREATE TABLE IF NOT EXISTS kb_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
