@@ -16,6 +16,7 @@ function cleanDraft(value: Partial<ResearchPlanDraft>, weekKey: string): Researc
   const now = new Date().toISOString()
   return {
     weekKey,
+    requirement: typeof value.requirement === 'string' ? value.requirement.slice(0, 2000) : '',
     queries: Array.isArray(value.queries)
       ? value.queries.filter((query): query is string => typeof query === 'string').map(query => query.slice(0, 300)).slice(0, 12)
       : [],

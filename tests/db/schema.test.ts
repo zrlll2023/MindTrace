@@ -20,12 +20,14 @@ describe('schema 迁移', () => {
     expect(tables).toContain('kb_events')
     expect(tables).toContain('capture_messages')
     expect(tables).toContain('profile_fields')
+    expect(tables).toContain('linked_accounts')
     const folderCols = db.exec('PRAGMA table_info(kb_folders)')[0].values.map(v => v[1])
     const itemCols = db.exec('PRAGMA table_info(kb_items)')[0].values.map(v => v[1])
     const entryCols = db.exec('PRAGMA table_info(entries)')[0].values.map(v => v[1])
     const eventCols = db.exec('PRAGMA table_info(kb_events)')[0].values.map(v => v[1])
     const captureCols = db.exec('PRAGMA table_info(capture_messages)')[0].values.map(v => v[1])
     const sessionCols = db.exec('PRAGMA table_info(capture_sessions)')[0].values.map(v => v[1])
+    const accountCols = db.exec('PRAGMA table_info(linked_accounts)')[0].values.map(v => v[1])
     expect(folderCols).toContain('system_key')
     expect(folderCols).toContain('sort_order')
     expect(folderCols).toContain('tags')
@@ -39,6 +41,9 @@ describe('schema 迁移', () => {
     expect(entryCols).toContain('hidden_scope')
     expect(eventCols).toContain('hidden_scope')
     expect(sessionCols).toContain('hidden_scope')
+    // 账号关联表：外部账号唯一 ID 与唯一键是唯一性判定的事实来源
+    expect(accountCols).toContain('provider_user_id')
+    expect(accountCols).toContain('identity_key')
   })
 
   describe('升级到知识库操作流水', () => {

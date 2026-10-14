@@ -25,7 +25,7 @@ export const routes: NavRoute[] = [
     path: '/reports',
     name: 'reports',
     component: () => import('./views/ReportsView.vue'),
-    meta: { nav: true, icon: 'file-text', label: '报告', desc: 'AI 基于记录生成的日报与周报' }
+    meta: { nav: true, icon: 'file-text', label: '研究', desc: 'AI 生成的日报周报，与你主导的周度研究' }
   },
   {
     path: '/knowledge',

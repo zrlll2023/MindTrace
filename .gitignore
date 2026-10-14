@@ -8,3 +8,16 @@ release/
 tests/e2e/__screenshots__/
 .freebuff/
 .workbuddy/
+
+# MindTrace 自身数据：绝不入库。
+# 数据目录默认在 %APPDATA%\mindtrace\data（仓库之外），但万一被选到仓库内部，
+# 这份清单保证 mindtrace.db / secrets.bin / 备份 / 导出不会被 git add . 带进去。
+*.db
+*.db.pre-probe-cleanup
+secrets.bin
+.mtkey
+backups/
+exports/
+knowledge-assets/
+# 只锚定仓库根目录：数据目录若建在仓库内，最可能就是叫 data
+/data/

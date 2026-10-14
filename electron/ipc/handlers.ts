@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { getContext } from '../context'
-import { AppSettings, HIDE_SCOPES, HideScope, KbAction, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues, ResearchPlanDraft } from '../types'
+import { AppSettings, HIDE_SCOPES, HideScope, IDENTITY_PROVIDERS, IdentityProvider, KbAction, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues, ResearchPlanDraft } from '../types'
 import { parseCaptureWith } from '../analysis/parser'
 import { desensitizeText } from '../analysis/desensitize'
 import { HiddenTarget, NewEntry } from '../db/repository'
@@ -8,6 +8,8 @@ import { TimelineFilter } from '../types'
 import { CaptureHistory } from '../db/capture'
 import { AI_QUICK_CAPTURE_FOLDER_KEY, AI_QUICK_CAPTURE_FOLDER_NAME, KnowledgeBase } from '../db/knowledge'
 import { ProfileStore } from '../db/profile'
+import { AccountConflictError, LinkedAccountStore } from '../db/accounts'
+import { IDENTITY_PROVIDER_META, IdentityError, verifyIdentity } from '../adapters/identity'
 import {
   dataLocationStatus,
   defaultDataDir,
@@ -482,6 +484,86 @@ export function registerIpcHandlers(): void {
     } catch (error) {
       try { db.run('ROLLBACK') } catch { /* no active transaction */ }
       return { ok: false, error: (error as Error).message }
+    }
+  })
+
+  // ---------- 账号关联（GitHub / Gitee 唯一身份）----------
+  // 令牌只进 SecretBox（加密落盘），数据库里只留平台返回的权威账号 ID 与时间。
+  const accountTokenKey = (provider: IdentityProvider) => `account_token:${provider}`
+  const readProvider = (value: unknown): IdentityProvider => {
+    if (value === 'github' || value === 'gitee') return value
+    throw new Error('不支持的账号平台')
+  }
+  const accountSummary = () => {
+    const store = new LinkedAccountStore(getContext().repo.getDb())
+    const accounts = store.list()
+    return {
+      ok: true as const,
+      accounts,
+      fingerprint: store.fingerprint(),
+      providers: IDENTITY_PROVIDERS.map(id => ({
+        ...IDENTITY_PROVIDER_META[id],
+        linked: accounts.some(account => account.provider === id)
+      }))
+    }
+  }
+  /** 预期内的用户输入错误（令牌失效、唯一性冲突）不打错误日志，避免污染诊断日志 */
+  const isExpectedAccountError = (error: unknown) =>
+    error instanceof IdentityError || error instanceof AccountConflictError
+
+  ipcMain.handle('accounts:summary', () => accountSummary())
+
+  ipcMain.handle('accounts:link', async (_e, provider: unknown, token: unknown) => {
+    try {
+      const id = readProvider(provider)
+      const identity = await verifyIdentity(id, String(token ?? ''))
+      const c = getContext()
+      // 先过唯一性闸门再落盘令牌：冲突时本机不会多出一份无用凭据
+      new LinkedAccountStore(c.repo.getDb()).link(identity)
+      c.secrets.set(accountTokenKey(id), String(token).trim())
+      c.repo.save()
+      logInfo('accounts.linked', { provider: id })
+      return accountSummary()
+    } catch (error) {
+      if (!isExpectedAccountError(error)) logError('accounts.link.failed', error)
+      return { ...accountSummary(), ok: false, error: (error as Error).message }
+    }
+  })
+
+  ipcMain.handle('accounts:refresh', async (_e, provider: unknown) => {
+    try {
+      const id = readProvider(provider)
+      const c = getContext()
+      const { label } = IDENTITY_PROVIDER_META[id]
+      const store = new LinkedAccountStore(c.repo.getDb())
+      if (!store.get(id)) throw new Error(`本机尚未关联 ${label} 账号`)
+      const token = c.secrets.get(accountTokenKey(id))
+      if (!token) throw new Error(`${label} 的访问令牌不在本机，请重新关联以恢复校验`)
+      const identity = await verifyIdentity(id, token)
+      // 同一账号重新校验只是刷新资料与校验时间；换成别的账号会被唯一性闸门拒绝
+      store.link(identity)
+      c.repo.save()
+      // 日志只留平台名：账号 ID 是指纹的输入，不该随诊断包外发
+      logInfo('accounts.refreshed', { provider: id })
+      return accountSummary()
+    } catch (error) {
+      if (!isExpectedAccountError(error)) logError('accounts.refresh.failed', error)
+      return { ...accountSummary(), ok: false, error: (error as Error).message }
+    }
+  })
+
+  ipcMain.handle('accounts:unlink', (_e, provider: unknown) => {
+    try {
+      const id = readProvider(provider)
+      const c = getContext()
+      new LinkedAccountStore(c.repo.getDb()).unlink(id)
+      c.secrets.delete(accountTokenKey(id))
+      c.repo.save()
+      logInfo('accounts.unlinked', { provider: id })
+      return accountSummary()
+    } catch (error) {
+      logError('accounts.unlink.failed', error)
+      return { ...accountSummary(), ok: false, error: (error as Error).message }
     }
   })
 
@@ -1019,11 +1101,12 @@ export function registerIpcHandlers(): void {
     return dailyMetrics(c.repo, dateFrom, dateTo)
   })
 
-  ipcMain.handle('labs:planResearch', async () => {
+  ipcMain.handle('labs:planResearch', async (_e, requirement?: string) => {
     const c = getContext()
     const llm = c.getLlm()
     if (!llm) return { ok: false, error: '请先在设置页配置 AI 提供商', queries: [], note: '' }
     try {
+      const userRequirement = String(requirement ?? '').trim().slice(0, 2000)
       const threads = await c.repo.listThreads()
       const recent = await c.repo.listEntries({ kind: 'idea', limit: 10 })
       const ideas = recent.map(e => {
@@ -1034,11 +1117,12 @@ export function registerIpcHandlers(): void {
         }
       }).filter(Boolean)
       const { planResearch } = await import('../analysis/labs.js')
-      const plan = await planResearch(llm, threads.map(t => t.title), ideas)
+      const plan = await planResearch(llm, threads.map(t => t.title), ideas, userRequirement)
       const weekKey = researchWeekKey()
       const existing = await getResearchDraft(c.repo, weekKey)
       const saved = await saveResearchDraft(c.repo, {
         weekKey,
+        requirement: userRequirement,
         ...plan,
         finding: existing?.finding ?? '',
         findingFrom: existing?.findingFrom ?? '',

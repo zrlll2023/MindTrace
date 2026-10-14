@@ -202,7 +202,7 @@ describe('全链路（Mock LLM 替代真实 Key）', () => {
 
   it('10. 引导式周度研究：AI 返回搜索词计划（走 Mock LLM）', async () => {
     const { planResearch } = await import('../../electron/analysis/labs')
-    const plan = await planResearch(llm, ['想法孵化线'], ['向量检索日记'])
+    const plan = await planResearch(llm, ['想法孵化线'], ['向量检索日记'], '弄清向量检索在个人知识库里的评估方法')
     expect(plan.queries.length).toBeGreaterThanOrEqual(3)
     expect(plan.queries.length).toBeLessThanOrEqual(5)
     expect(plan.note).toBeTruthy()

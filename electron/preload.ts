@@ -123,9 +123,15 @@ const api = {
   external: {
     openUrl: (url: string) => ipcRenderer.invoke('shell:openExternal', url)
   },
+  accounts: {
+    summary: () => ipcRenderer.invoke('accounts:summary'),
+    link: (provider: 'github' | 'gitee', token: string) => ipcRenderer.invoke('accounts:link', provider, token),
+    refresh: (provider: 'github' | 'gitee') => ipcRenderer.invoke('accounts:refresh', provider),
+    unlink: (provider: 'github' | 'gitee') => ipcRenderer.invoke('accounts:unlink', provider)
+  },
   labs: {
     metrics: (dateFrom: string, dateTo: string) => ipcRenderer.invoke('labs:metrics', dateFrom, dateTo),
-    planResearch: () => ipcRenderer.invoke('labs:planResearch'),
+    planResearch: (requirement?: string) => ipcRenderer.invoke('labs:planResearch', requirement),
     saveFinding: (text: string, from: string) => ipcRenderer.invoke('labs:saveFinding', text, from),
     getResearchDraft: () => ipcRenderer.invoke('labs:getResearchDraft'),
     saveResearchDraft: (draft: unknown) => ipcRenderer.invoke('labs:saveResearchDraft', draft),

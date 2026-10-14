@@ -62,10 +62,59 @@ export const PROFILE_KEYS = ['name', 'preferredName', 'identity', 'location', 'b
 export type ProfileKey = (typeof PROFILE_KEYS)[number]
 export type ProfileValues = Partial<Record<ProfileKey, string>>
 
+// ---------- 账号关联：外部身份锚点 ----------
+
+/** 支持关联的身份平台；顺序即界面展示顺序 */
+export type IdentityProvider = 'github' | 'gitee'
+export const IDENTITY_PROVIDERS: IdentityProvider[] = ['github', 'gitee']
+
+/**
+ * 平台返回的权威身份。
+ * providerUserId 是平台侧不可变的数字 ID（不是会改的登录名），
+ * 它就是「账号唯一性」判定与未来跨设备身份锚点的唯一依据。
+ */
+export interface ProviderIdentity {
+  provider: IdentityProvider
+  providerUserId: string
+  login: string
+  displayName: string
+  avatarUrl: string
+  profileUrl: string
+}
+
+/** 本机已关联的外部账号（在权威身份之上补上关联与校验时间） */
+export interface LinkedAccount extends ProviderIdentity {
+  /** 首次关联时间（ISO 字符串） */
+  linkedAt: string
+  /** 最近一次通过平台校验的时间（ISO 字符串） */
+  verifiedAt: string
+}
+
+/** 平台元信息：由主进程提供，渲染层只负责展示 */
+export interface IdentityProviderOption {
+  id: IdentityProvider
+  label: string
+  /** 官方令牌创建页，界面按钮直接打开 */
+  tokenUrl: string
+  tokenHint: string
+  scopes: string
+  linked: boolean
+}
+
+/** 账号关联总览：账号列表 + 由全部账号派生的本机身份指纹 */
+export interface AccountSummary {
+  accounts: LinkedAccount[]
+  /** 无任何已关联账号时为空串 */
+  fingerprint: string
+  providers: IdentityProviderOption[]
+}
+
 export type SearchProvider = 'none' | 'tavily' | 'bocha'
 
 export interface ResearchPlanDraft {
   weekKey: string
+  /** 用户写下的本周研究需求：AI 必须据此出题，不得替换成自己推测的主题 */
+  requirement: string
   queries: string[]
   note: string
   finding: string

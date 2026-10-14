@@ -1,16 +1,17 @@
 <template>
   <div class="page reports-page">
     <div class="page-head">
-      <h1 class="page-title">报告</h1>
-      <p class="page-sub">AI 基于你的记录生成的日报与周报</p>
+      <h1 class="page-title">研究</h1>
+      <p class="page-sub">AI 基于记录生成的日报与周报，以及你写下需求、AI 出题的周度研究</p>
     </div>
 
     <div class="topbar">
       <div class="seg-group">
         <button :class="tab === 'daily' ? 'seg on' : 'seg'" @click="switchTab('daily')">日报</button>
         <button :class="tab === 'weekly' ? 'seg on' : 'seg'" @click="switchTab('weekly')">周报</button>
+        <button :class="tab === 'research' ? 'seg on' : 'seg'" @click="switchTab('research')">周度研究</button>
       </div>
-      <div class="actions">
+      <div v-if="tab !== 'research'" class="actions">
         <DatePicker v-model="genDate" />
         <button class="primary" :disabled="generating" @click="generate">
           <Icon name="sparkles" :size="15" />
@@ -19,7 +20,11 @@
       </div>
     </div>
 
-    <div class="body">
+    <div v-if="tab === 'research'" class="research-scroll">
+      <WeeklyResearchPanel />
+    </div>
+
+    <div v-else class="body">
       <aside class="archive">
         <div class="section-label">{{ tab === 'daily' ? '日报存档' : '周报存档' }}</div>
         <button
@@ -61,6 +66,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import Icon from '../components/Icon.vue'
 import DatePicker from '../components/DatePicker.vue'
+import WeeklyResearchPanel from '../components/WeeklyResearchPanel.vue'
 
 interface ReportRow {
   id: number
@@ -71,7 +77,9 @@ interface ReportRow {
   created_at: string
 }
 
-const tab = ref<'daily' | 'weekly'>('daily')
+type ReportTab = 'daily' | 'weekly' | 'research'
+
+const tab = ref<ReportTab>('daily')
 const archive = ref<ReportRow[]>([])
 const current = ref<ReportRow | null>(null)
 const generating = ref(false)
@@ -83,6 +91,7 @@ const rendered = computed(() =>
 )
 
 async function loadArchive(): Promise<void> {
+  if (tab.value === 'research') return
   archive.value = await window.api.reports.list(tab.value)
   if (archive.value.length && !current.value) current.value = archive.value[0]
   if (!archive.value.some(r => r.id === current.value?.id)) {
@@ -90,9 +99,10 @@ async function loadArchive(): Promise<void> {
   }
 }
 
-function switchTab(t: 'daily' | 'weekly'): void {
+function switchTab(t: ReportTab): void {
   tab.value = t
   current.value = null
+  if (t === 'research') return
   void loadArchive()
 }
 
@@ -101,6 +111,7 @@ function select(r: ReportRow): void {
 }
 
 async function generate(): Promise<void> {
+  if (tab.value === 'research') return
   generating.value = true
   try {
     const r =
@@ -169,6 +180,12 @@ onMounted(() => void loadArchive())
   background: var(--accent-weak); color: var(--accent-text); font-weight: 600;
 }
 .arch-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 12px; }
+
+/* 周度研究：独立滚动区，避免长内容被页面 overflow 裁掉 */
+.research-scroll {
+  flex: 1; min-height: 0; max-width: 900px;
+  overflow-y: auto; padding-right: 6px;
+}
 
 .viewer {
   flex: 1; min-width: 0; min-height: 0; margin-bottom: 0;

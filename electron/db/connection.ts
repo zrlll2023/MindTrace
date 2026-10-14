@@ -299,6 +299,21 @@ function migrate(db: Database): void {
       db.run(`ALTER TABLE ${table} ADD COLUMN hidden_scope TEXT`)
     }
   }
+
+  // ---------- 账号关联（外部身份锚点）----------
+  // provider 作主键 = 同一平台只允许一个账号；identity_key 唯一 = 同一外部账号全局只出现一次。
+  // 令牌不进表，只由 SecretBox 加密保存，这里仅留权威身份与时间。
+  db.run(`CREATE TABLE IF NOT EXISTS linked_accounts (
+    provider TEXT PRIMARY KEY CHECK (provider IN ('github','gitee')),
+    provider_user_id TEXT NOT NULL,
+    identity_key TEXT NOT NULL UNIQUE,
+    login TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL DEFAULT '',
+    avatar_url TEXT NOT NULL DEFAULT '',
+    profile_url TEXT NOT NULL DEFAULT '',
+    linked_at TEXT NOT NULL,
+    verified_at TEXT NOT NULL
+  )`)
 }
 
 /** 升级前已有的资料没有流水，按其创建/更新时间补写收录与修改事件 */

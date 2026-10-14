@@ -5,7 +5,7 @@ import { summarizeSleepDay } from './sleep'
 /**
  * v3 实验性功能（spec §9 v3，均标注“实验”）：
  * 1. 相关性仪表盘：按日聚合睡眠/负面事件等指标，供前端画曲线
- * 2. 引导式周度研究：AI 出搜索词 → 人工在浏览器搜索并粘贴感兴趣内容 → 入库为 quote/idea
+ * 2. 引导式周度研究（界面已并入「研究」页）：AI 按用户写下的研究需求出搜索词 → 人工在浏览器搜索并粘贴感兴趣内容 → 入库为 quote/idea
  */
 
 export async function dailyMetrics(repo: Repo, dateFrom: string, dateTo: string): Promise<DayMetrics[]> {
@@ -51,21 +51,31 @@ export async function dailyMetrics(repo: Repo, dateFrom: string, dateTo: string)
   })
 }
 
-/** 引导式研究会话：AI 生成 3~5 个搜索词 + 推荐搜索引擎链接 */
+/**
+ * 引导式研究会话：AI 生成 3~5 个搜索词 + 推荐搜索引擎链接。
+ * requirement 是用户写下的研究需求，优先级高于 AI 自己的推测：
+ * 有需求时必须严格按需求出题，需求为空才允许按兴趣线推断并说明这是推断。
+ */
 export async function planResearch(
   llm: { chat: (m: { role: 'system' | 'user'; content: string }[]) => Promise<string> },
   threadTitles: string[],
-  recentIdeas: string[]
+  recentIdeas: string[],
+  requirement = ''
 ): Promise<{ queries: string[]; note: string }> {
+  const userRequirement = requirement.trim().slice(0, 2000)
   const messages: { role: 'system' | 'user'; content: string }[] = [
     {
       role: 'system',
       content:
-        '你是 MindTrace 的研究向导。基于用户的兴趣线与最近想法，生成 3~5 个值得本周深入搜索的问题式搜索词（中文或英文，具体明确，适合搜索引擎）。只输出 JSON：{"queries": ["...", "..."], "note": "一句话说明为什么这些值得研究"}'
+        '你是 MindTrace 的研究向导。用户会写下本周的研究需求，你必须严格按它出题，不要替换成你自己推测的主题。规则：' +
+        '（1）有研究需求时，每个搜索词都必须直接服务于该需求，需求没提到的方向一律不要出现；' +
+        '（2）需求为空时，才依据兴趣线与最近想法推断方向，并在 note 中说明这是推断；' +
+        '（3）生成 3~5 个问题式搜索词（中文或英文，具体明确，适合搜索引擎）。' +
+        '只输出 JSON：{"queries": ["...", "..."], "note": "一句话说明为什么这些值得研究"}'
     },
     {
       role: 'user',
-      content: `兴趣线：${JSON.stringify(threadTitles)}\n最近想法：${JSON.stringify(recentIdeas.slice(0, 10))}`
+      content: `研究需求：${userRequirement || '（用户未填写）'}\n兴趣线：${JSON.stringify(threadTitles)}\n最近想法：${JSON.stringify(recentIdeas.slice(0, 10))}`
     }
   ]
   const out = await llm.chat(messages)
