@@ -9,6 +9,10 @@ tests/e2e/__screenshots__/
 .freebuff/
 .workbuddy/
 
+# 本地架构治理交接文档，不随源码提交。
+/AGENT.md
+/AGENT/
+
 # MindTrace 自身数据：绝不入库。
 # 数据目录默认在 %APPDATA%\mindtrace\data（仓库之外），但万一被选到仓库内部，
 # 这份清单保证 mindtrace.db / secrets.bin / 备份 / 导出不会被 git add . 带进去。

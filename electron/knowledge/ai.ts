@@ -1,4 +1,5 @@
-import { KnowledgeBase, KbItem } from '../db/knowledge'
+import { KnowledgeBase } from '../db/knowledge'
+import type { KbItem } from '../types'
 import { LLMAdapter } from '../adapters/llm'
 import { sanitizeText } from '../analysis/validators'
 

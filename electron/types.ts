@@ -197,6 +197,35 @@ export const HIDE_SCOPE_LABELS: Record<HideScope, string> = {
   timeline: '仅时间线列表隐去，搜索与统计仍算'
 }
 
+/** 知识库文件夹与资料的共享数据契约。 */
+export interface KbFolder {
+  id: number
+  name: string
+  description: string
+  system_key: string | null
+  created_at: string
+  sort_order: number | null
+  tags: string[]
+}
+
+export interface KbItem {
+  id: number
+  folder_id: number
+  title: string
+  source_type: string // markdown | docx | pptx | xlsx | html | text
+  body: string
+  file_path: string
+  reason: string
+  reflection: string
+  ai_summary: string
+  source_entry_id: number | null
+  import_key: string | null
+  created_at: string
+  updated_at: string
+  title_locked: number | null
+  tags: string[]
+}
+
 /** 知识库操作类型；与 kb_events 的 CHECK 约束保持一致 */
 export type KbAction = 'collect' | 'edit' | 'reflect' | 'summarize' | 'extend' | 'import' | 'delete'
 

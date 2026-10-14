@@ -1,5 +1,6 @@
 import { Database } from 'sql.js'
 import { KbAction } from '../types'
+import type { KbFolder, KbItem } from '../types'
 
 export const AI_QUICK_CAPTURE_FOLDER_KEY = 'ai_quick_capture'
 export const AI_QUICK_CAPTURE_FOLDER_NAME = 'AI 快速记录'
@@ -50,34 +51,6 @@ function updatedEntryTitle(currentTitle: string, body: string): string {
  * 文件夹 → 资料条目；条目携带用户的「收录原因」与「感受记录」，以及可选的 AI 总结。
  * AI 只在用户点按钮时写入 ai_summary 辅助字段，绝不垄断增删改。
  */
-export interface KbFolder {
-  id: number
-  name: string
-  description: string
-  system_key: string | null
-  created_at: string
-  sort_order: number | null
-  tags: string[]
-}
-
-export interface KbItem {
-  id: number
-  folder_id: number
-  title: string
-  source_type: string // markdown | docx | pptx | xlsx | html | text
-  body: string
-  file_path: string
-  reason: string
-  reflection: string
-  ai_summary: string
-  source_entry_id: number | null
-  import_key: string | null
-  created_at: string
-  updated_at: string
-  title_locked: number | null
-  tags: string[]
-}
-
 /**
  * 写操作的真实结果。
  * 「无改动」必须和「已保存」分开返回：资料没变时数据层不写库也不留痕，

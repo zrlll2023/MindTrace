@@ -2,6 +2,14 @@
 
 本文件是仓库级强制说明。任何 AI 或自动化代理开始修改前，都必须先阅读本文件并核对当前 Git 状态。
 
+## 分支硬约束（2026-10-14 用户明确指定）
+
+- AI 或自动化代理只允许在 `architecture-governance` 分支进行修改。修改文件、暂存、提交或执行回滚前，必须用 `git branch --show-current` 确认当前分支；结果不完全等于 `architecture-governance` 时立即停止写入，不得自行换分支继续。
+- 任何时候都禁止切换到 `main`，禁止修改本地或任何远端的 `main` 分支。不得向 `main` 提交、合并、变基、拣选提交、重置、强制更新、推送、删除或重建；不得合并或启用自动合并目标为 `main` 的 Pull Request。
+- 不得通过其他 worktree、其他克隆、Git 引用命令、远端 API 或自动化流程绕过上述限制。发布、收尾、同步、回滚、测试通过或波次获批均不构成例外。
+- `main` 仅可用于只读比较。收尾应停留在 `architecture-governance`，不得将改动集成到 `main`。下面关于稳定集成、发布及其他长期分支的说明，不构成 AI 操作这些分支的授权。
+- 当前 `architecture-governance` 的上游为 `origin/main`；禁止不指定目标的 `git push`、`git push --all` 或 `git push --mirror`，避免误推主分支。未来若获准推送本分支，必须显式指定 `HEAD:refs/heads/architecture-governance`，不得以 `main` 为目标。
+
 ## 分支职责
 
 - `main` 是稳定集成与版本发布分支。功能开发、重构和体验优化不得直接在 `main` 上进行，应通过独立分支和 Pull Request 合并。

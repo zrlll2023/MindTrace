@@ -192,10 +192,9 @@ import {
   isAiQuickCaptureFolder,
   isItemBodyLocked,
   itemTags,
-  typeLabel,
-  type KbFolder,
-  type KbItem
+  typeLabel
 } from '../utils/knowledge'
+import type { KbFolder, KbItem } from '../../electron/types'
 import { formatSqlDateTime } from '../utils/datetime'
 
 const folders = ref<KbFolder[]>([])

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { KbItem, KnowledgeBase } from '../db/knowledge'
+import { KnowledgeBase } from '../db/knowledge'
+import type { KbItem } from '../types'
 import { extractText, unzipOffice } from '../import/office'
 import { localizeMarkdownImages } from './assets'
 
