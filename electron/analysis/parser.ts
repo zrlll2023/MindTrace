@@ -1,6 +1,6 @@
 import { LLMAdapter } from '../adapters/llm'
 import { ChatMessage } from '../adapters/llm'
-import { EntryKind, ParsedEntry, PROFILE_KEYS, ProfileValues } from '../types'
+import { AiSkillInjection, EMPTY_SKILL_INJECTION, EntryKind, ParsedEntry, PROFILE_KEYS, ProfileValues } from '../types'
 
 const VALID_KINDS: EntryKind[] = ['sleep', 'event', 'conversation', 'quote', 'idea', 'other']
 
@@ -68,12 +68,15 @@ export async function parseCaptureWith(
   rawText: string,
   history: ChatMessage[] = [],
   profile: ProfileValues = {},
-  now: Date = new Date()
+  now: Date = new Date(),
+  skills: AiSkillInjection = EMPTY_SKILL_INJECTION
 ): Promise<CaptureParseResult> {
   const current = localDateTime(now)
   const profileText = Object.entries(profile).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n')
+  // 技能只追加在 system prompt 末尾，且已声明「次级偏好 + 契约优先」，不会挤掉 JSON 形状说明
+  const system = `${SYSTEM_PROMPT}\n\n当前设备本地时间：${current.date} ${current.time}\n\n已确认用户资料（不得覆盖）：\n${profileText || '暂无'}${skills.block ? `\n\n${skills.block}` : ''}`
   const messages: ChatMessage[] = [
-    { role: 'system', content: `${SYSTEM_PROMPT}\n\n当前设备本地时间：${current.date} ${current.time}\n\n已确认用户资料（不得覆盖）：\n${profileText || '暂无'}` },
+    { role: 'system', content: system },
     ...history,
     { role: 'user', content: rawText }
   ]

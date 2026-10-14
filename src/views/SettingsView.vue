@@ -83,6 +83,40 @@
       <p v-if="store.message" :class="store.messageOk ? 'msg ok' : 'msg err'">{{ store.message }}</p>
     </div>
 
+    <!-- AI 技能中心 -->
+    <div class="card skill-card">
+      <div class="card-head">
+        <h3>AI 技能中心</h3>
+        <button class="secondary small" @click="openSkillDrawer(null)">
+          <Icon name="sliders" :size="14" />管理全部技能
+        </button>
+      </div>
+      <p class="hint">
+        技能是写给 AI 的偏好说明，按区域隔离：只有在你为它选定的那一个 AI 调用里才会注入，其他页面看不到、也用不上。
+        这样日报的要求不会污染周报，周度研究的出题偏好也不会改变快速记录的拆条方式。
+      </p>
+      <div class="skill-scope-grid">
+        <div v-for="key in skillScopes" :key="key" class="skill-scope-card">
+          <div class="scope-title">
+            <strong>{{ skillStore.scopes[key].label }}</strong>
+            <span class="tag" :class="skillStore.enabledByScope(key).length ? 'ok' : ''">
+              {{ skillStore.enabledByScope(key).length }} / {{ skillStore.byScope(key).length }}
+            </span>
+          </div>
+          <p class="scope-surface">{{ skillStore.scopes[key].surface }}</p>
+          <ul v-if="skillStore.byScope(key).length" class="skill-names">
+            <li v-for="item in skillStore.byScope(key)" :key="item.id" :class="{ off: !item.enabled }">
+              {{ item.name }}<template v-if="!item.enabled">（已停用）</template>
+            </li>
+          </ul>
+          <p v-else class="scope-empty">未添加技能，使用内置默认规则</p>
+          <button class="ghost small scope-action" @click="openSkillDrawer(key)">
+            <Icon name="plus" :size="13" />添加 / 管理
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 语义搜索 -->
     <div class="card">
       <h3>语义搜索</h3>
@@ -180,17 +214,21 @@
       </div>
       <p v-if="diagnosticMessage" :class="diagnosticOk ? 'msg ok' : 'msg err'">{{ diagnosticMessage }}</p>
     </div>
+
+    <SkillDrawer v-if="skillDrawerOpen" :scope="skillDrawerScope" @close="closeSkillDrawer" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, reactive } from 'vue'
 import { useSettingsStore } from '../stores/settings'
+import { useSkillsStore } from '../stores/skills'
 import { useThemeStore, ThemeMode } from '../stores/theme'
-import { AppSettings, DEFAULT_SETTINGS, SearchProvider } from '../../electron/types'
+import { AI_SKILL_SCOPES, AiSkillScope, AppSettings, DEFAULT_SETTINGS, SearchProvider } from '../../electron/types'
 import Icon from '../components/Icon.vue'
 import SelectField, { SelectOption } from '../components/SelectField.vue'
 import ComboboxField from '../components/ComboboxField.vue'
+import SkillDrawer from '../components/SkillDrawer.vue'
 
 const THEME_OPTIONS: { mode: ThemeMode; name: string }[] = [
   { mode: 'light', name: '纸 · 浅色' },
@@ -200,6 +238,21 @@ const THEME_OPTIONS: { mode: ThemeMode; name: string }[] = [
 
 const store = useSettingsStore()
 const theme = useThemeStore()
+const skillStore = useSkillsStore()
+const skillScopes = AI_SKILL_SCOPES
+const skillDrawerOpen = ref(false)
+const skillDrawerScope = ref<AiSkillScope | null>(null)
+
+function openSkillDrawer(scope: AiSkillScope | null): void {
+  skillDrawerScope.value = scope
+  skillDrawerOpen.value = true
+}
+
+function closeSkillDrawer(): void {
+  skillDrawerOpen.value = false
+  // 关闭后回到全库视图，下次打开不会莫名停在上一次的区域上
+  skillDrawerScope.value = null
+}
 const form = reactive<AppSettings>({ ...DEFAULT_SETTINGS })
 const presetId = ref('deepseek')
 const apiKey = ref('')
@@ -228,6 +281,7 @@ onMounted(async () => {
   restartRequired.value = !!store.payload.pendingDataDir
   const p = store.presets.find(p => p.id === form.providerId)
   if (p) { presetId.value = p.id; models.value = [...p.models] }
+  await skillStore.load()
 })
 
 function onPresetChange(): void {
@@ -353,8 +407,40 @@ function showExportLocationMessage(message: string, ok: boolean): void {
 </script>
 
 <style scoped>
-.settings { max-width: 720px; }
+/* 宽屏：卡片铺满自适应列宽，不做固定窄栏；表单字段宽度由栅格列宽决定，仍是可读的单列输入 */
+.settings { max-width: var(--page-max); }
 .card > h3 { margin-bottom: 4px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+.card-head h3 { margin: 0; }
+
+/* 最大化窗口后单列会留下大片空白：卡片改两栏，页头与技能中心横跨整行 */
+@media (min-width: 1500px) {
+  .settings {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap);
+    align-items: start;
+  }
+  .settings .page-head,
+  .settings .skill-card { grid-column: 1 / -1; }
+  .settings .card { margin-bottom: 0; }
+}
+
+/* AI 技能中心：按区域铺开，一眼看出每个页面各自带了什么技能 */
+.skill-scope-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px; margin-top: 4px; }
+.skill-scope-card {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  padding: 12px; border: 1px solid var(--border); border-radius: var(--r);
+  background: var(--surface-2);
+}
+.scope-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.scope-title strong { font-size: 13.5px; }
+.scope-surface { margin: 0; font-size: 11.5px; color: var(--text-3); }
+.skill-names { margin: 0; padding-left: 16px; display: grid; gap: 2px; font-size: 12.5px; color: var(--text-2); }
+.skill-names li.off { opacity: 0.6; }
+.skill-names li::marker { color: var(--text-3); }
+.scope-empty { margin: 0; font-size: 12.5px; color: var(--text-3); }
+.scope-action { align-self: flex-start; margin-top: auto; }
 
 /* 主题选择 */
 .theme-picker { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -400,4 +486,14 @@ function showExportLocationMessage(message: string, ok: boolean): void {
 .confirm-row span { margin-right: auto; }
 .export-location { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
 .export-location .msg { margin-top: 10px; margin-bottom: 0; }
+
+@media (max-width: 720px) {
+  .theme-picker { gap: 8px; }
+  .preview { width: 96px; height: 56px; }
+  .row > button { flex: 1 1 auto; }
+  .confirm-row { flex-wrap: wrap; }
+  .confirm-row span { flex: 1 1 100%; }
+  .migration-box .row > button,
+  .restart-notice .row > button { flex: 1 1 100%; }
+}
 </style>

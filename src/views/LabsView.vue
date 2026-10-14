@@ -232,14 +232,14 @@ function formatTime(value: string): string {
 </script>
 
 <style scoped>
-.labs { max-width: 860px; }
+.labs { max-width: var(--page-max); }
 .badge-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 /* 高度对齐 h3 的行盒（15px × 1.4 = 21px），按钮与「账号关联」四字齐平 */
 .account-head-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; height: 21px; }
 .account-head-tools .identity-toggle { padding: 2px 9px; }
 .save-state { flex: 0 0 auto; color: var(--ok); font-size: 12px; }
-.identity-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 10px; }
+.identity-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 12px; margin: 14px 0 10px; }
 .identity-cell { min-width: 0; padding: 10px 12px; background: var(--surface-2); border-radius: var(--r); }
 .identity-label { display: block; font-size: 11.5px; color: var(--text-3); margin-bottom: 4px; }
 .identity-value { font-size: 13px; overflow-wrap: anywhere; }
@@ -271,5 +271,7 @@ function formatTime(value: string): string {
   .account-head-tools { align-self: flex-start; height: auto; }
   .identity-strip { grid-template-columns: 1fr; }
   .provider-head { flex-direction: column; }
+  .token-row input { flex: 1 1 100%; }
+  .provider-actions { flex-wrap: wrap; }
 }
 </style>

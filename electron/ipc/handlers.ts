@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { getContext } from '../context'
-import { AppSettings, HIDE_SCOPES, HideScope, IDENTITY_PROVIDERS, IdentityProvider, KbAction, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues, ResearchPlanDraft } from '../types'
+import { AppSettings, AI_SKILL_LIMITS, AI_SKILL_SCOPE_META, HIDE_SCOPES, HideScope, IDENTITY_PROVIDERS, IdentityProvider, KbAction, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues, ResearchPlanDraft } from '../types'
 import { parseCaptureWith } from '../analysis/parser'
 import { desensitizeText } from '../analysis/desensitize'
 import { HiddenTarget, NewEntry } from '../db/repository'
@@ -23,6 +23,7 @@ import {
 import { CaptureChoice, commitCaptureEntries, undoCaptureCommit } from '../capture-commit'
 import { resolveEntryMoment } from '../timeline-moment'
 import { clearResearchDraft, getResearchDraft, researchWeekKey, saveResearchDraft } from '../store/research-draft'
+import { buildSkillBlock, listSkills, removeSkill, saveSkill, setSkillEnabled } from '../skills/registry'
 import { buildDiagnosticArchive, clearDiagnosticLogs, logError, logInfo, logsDirectory } from '../logger'
 
 interface KnowledgeChoice { addToKnowledge?: boolean; folderId?: number; newFolderName?: string; reason?: string }
@@ -272,6 +273,47 @@ export function registerIpcHandlers(): void {
     }
   )
 
+  // ---------- AI 技能（仅存提示词，不写业务数据） ----------
+  // 注意：动作型处理器都必须 repo.save()——本机是 sql.js 内存库，只改内存不落盘，
+  // 用户改完技能不做别的写操作就退出会静默丢失。
+  ipcMain.handle('skills:list', async () => {
+    const skills = await listSkills(getContext().repo)
+    return { ok: true, skills, scopes: AI_SKILL_SCOPE_META, limits: AI_SKILL_LIMITS }
+  })
+  ipcMain.handle('skills:save', async (_e, skill: unknown) => {
+    const c = getContext()
+    try {
+      const result = await saveSkill(c.repo, skill)
+      if (result.ok) c.repo.save()
+      return { ...result, scopes: AI_SKILL_SCOPE_META, limits: AI_SKILL_LIMITS }
+    } catch (error) {
+      logError('skills.save.failed', error)
+      return { ok: false, error: (error as Error).message, skills: [] }
+    }
+  })
+  ipcMain.handle('skills:delete', async (_e, id: string) => {
+    const c = getContext()
+    try {
+      const result = await removeSkill(c.repo, String(id ?? ''))
+      if (result.ok) c.repo.save()
+      return result
+    } catch (error) {
+      logError('skills.delete.failed', error)
+      return { ok: false, error: (error as Error).message, skills: [] }
+    }
+  })
+  ipcMain.handle('skills:setEnabled', async (_e, id: string, enabled: boolean) => {
+    const c = getContext()
+    try {
+      const result = await setSkillEnabled(c.repo, String(id ?? ''), enabled === true)
+      if (result.ok) c.repo.save()
+      return result
+    } catch (error) {
+      logError('skills.toggle.failed', error)
+      return { ok: false, error: (error as Error).message, skills: [] }
+    }
+  })
+
   // ---------- capture ----------
   ipcMain.handle('capture:list', (_e, sessionId?: string) => new CaptureHistory(getContext().repo.getDb()).list(sessionId))
   ipcMain.handle('capture:sessions', () => new CaptureHistory(getContext().repo.getDb()).sessions())
@@ -324,7 +366,9 @@ export function registerIpcHandlers(): void {
     try {
       const outgoing = c.getSettings().desensitize ? desensitizeText(raw) : raw
       const profile = new ProfileStore(c.repo.getDb()).values()
-      const result = await parseCaptureWith(llm, outgoing, prior, profile)
+      // 技能按区域注入：这里只取「AI 快速记录」区域的启用技能，日报/周报/周度研究的技能不会漏进来
+      const skills = await buildSkillBlock(c.repo, 'capture')
+      const result = await parseCaptureWith(llm, outgoing, prior, profile, new Date(), skills)
       if (!history.has(userMessage.id)) {
         return { ok: false, canceled: true, error: '对话已清空，本次 AI 回复已忽略', parsed: [] }
       }
@@ -581,10 +625,11 @@ export function registerIpcHandlers(): void {
     const { AnalyzeEngine } = await import('../analysis/engine.js')
     const engine = await buildEngine(c)
     try {
-      const report = await engine.analyzeDay(date)
+      const skills = await buildSkillBlock(c.repo, 'report.daily')
+      const report = await engine.analyzeDay(date, skills)
       c.repo.save()
       if (!report) return { ok: false, error: `${date} 没有任何记录，无法生成日报` }
-      return { ok: true, reportId: report.id }
+      return { ok: true, reportId: report.id, skills: skills.skills.map(s => s.name) }
     } catch (e) {
       return { ok: false, error: (e as Error).message }
     }
@@ -596,10 +641,11 @@ export function registerIpcHandlers(): void {
     const { AnalyzeEngine } = await import('../analysis/engine.js')
     const engine = await buildEngine(c)
     try {
-      const report = await engine.analyzeWeek(endDate)
+      const skills = await buildSkillBlock(c.repo, 'report.weekly')
+      const report = await engine.analyzeWeek(endDate, skills)
       c.repo.save()
       if (!report) return { ok: false, error: '该周没有任何记录' }
-      return { ok: true, reportId: report.id }
+      return { ok: true, reportId: report.id, skills: skills.skills.map(s => s.name) }
     } catch (e) {
       return { ok: false, error: (e as Error).message }
     }
@@ -1117,7 +1163,8 @@ export function registerIpcHandlers(): void {
         }
       }).filter(Boolean)
       const { planResearch } = await import('../analysis/labs.js')
-      const plan = await planResearch(llm, threads.map(t => t.title), ideas, userRequirement)
+      const skills = await buildSkillBlock(c.repo, 'research.plan')
+      const plan = await planResearch(llm, threads.map(t => t.title), ideas, userRequirement, skills)
       const weekKey = researchWeekKey()
       const existing = await getResearchDraft(c.repo, weekKey)
       const saved = await saveResearchDraft(c.repo, {

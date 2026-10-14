@@ -20,6 +20,9 @@
       </div>
     </div>
 
+    <!-- 技能区域边界：日报与周报是两个独立区域，切换标签会同步切换生效的技能 -->
+    <SkillScopeBar v-if="tab !== 'research'" :scope="tab === 'daily' ? 'report.daily' : 'report.weekly'" />
+
     <div v-if="tab === 'research'" class="research-scroll">
       <WeeklyResearchPanel />
     </div>
@@ -66,6 +69,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import Icon from '../components/Icon.vue'
 import DatePicker from '../components/DatePicker.vue'
+import SkillScopeBar from '../components/SkillScopeBar.vue'
 import WeeklyResearchPanel from '../components/WeeklyResearchPanel.vue'
 
 interface ReportRow {
@@ -161,13 +165,13 @@ onMounted(() => void loadArchive())
 .page-head { flex: 0 0 auto; }
 .topbar {
   display: flex; justify-content: space-between; align-items: center;
-  gap: 12px; flex: 0 0 auto; flex-wrap: wrap; margin-bottom: 16px;
+  gap: 12px; flex: 0 0 auto; flex-wrap: wrap; margin-bottom: 12px;
 }
-.actions { display: flex; gap: 10px; align-items: center; }
-.actions :deep(.dp--main) { width: 150px; }
+.actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.actions :deep(.dp--main) { width: clamp(132px, 12vw, 150px); }
 
 .body { display: flex; gap: 18px; flex: 1; min-height: 0; align-items: stretch; overflow: hidden; }
-.archive { width: 168px; flex: 0 0 168px; min-height: 0; overflow-y: auto; }
+.archive { width: clamp(140px, 13vw, 182px); flex: 0 0 clamp(140px, 13vw, 182px); min-height: 0; overflow-y: auto; }
 .arch-item {
   display: block; width: 100%; text-align: left;
   padding: 8px 12px; border-radius: var(--r); margin-bottom: 3px;
@@ -181,10 +185,11 @@ onMounted(() => void loadArchive())
 }
 .arch-empty { font-size: 12.5px; color: var(--text-3); padding: 8px 12px; }
 
-/* 周度研究：独立滚动区，避免长内容被页面 overflow 裁掉 */
+/* 周度研究：独立滚动区，避免长内容被页面 overflow 裁掉。
+   宽度随窗口自适应，但保留写作区的可读行宽上限（不等于报告正文那种整页铺满） */
 .research-scroll {
-  flex: 1; min-height: 0; max-width: 900px;
-  overflow-y: auto; padding-right: 6px;
+  flex: 1; min-height: 0; width: 100%; max-width: min(100%, 1120px);
+  overflow-y: auto; padding-right: 6px; scrollbar-gutter: stable;
 }
 
 .viewer {
@@ -193,7 +198,7 @@ onMounted(() => void loadArchive())
 }
 .viewer-head {
   display: flex; justify-content: space-between; align-items: center;
-  gap: 12px; flex: 0 0 auto; margin-bottom: 14px;
+  gap: 12px; flex: 0 0 auto; flex-wrap: wrap; margin-bottom: 14px;
   padding-bottom: 12px; border-bottom: 1px solid var(--border);
 }
 .viewer-head h2 {
@@ -201,6 +206,7 @@ onMounted(() => void loadArchive())
 }
 .md {
   flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px;
+  scrollbar-gutter: stable;
   font-family: SimSun, '宋体', 'Songti SC', 'Noto Serif CJK SC', serif;
 }
 .md :deep(*) { font-family: inherit; }
@@ -209,6 +215,7 @@ onMounted(() => void loadArchive())
 
 .toast {
   position: fixed; bottom: 22px; right: 26px; margin: 0;
+  max-width: min(420px, calc(100vw - 32px));
   background: var(--text); color: var(--bg);
   padding: 10px 16px; border-radius: var(--r); font-size: 13px;
   box-shadow: var(--shadow-lg); z-index: 80;
@@ -216,9 +223,12 @@ onMounted(() => void loadArchive())
 .toast-enter-active, .toast-leave-active { transition: opacity 0.2s var(--ease), transform 0.2s var(--ease); }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(6px); }
 
-@media (max-width: 760px) {
+@media (max-width: 720px) {
   .body { flex-direction: column; }
   .archive { width: 100%; flex: none; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; }
   .arch-item { width: auto; white-space: nowrap; margin-bottom: 0; }
+  .topbar { flex-direction: column; align-items: stretch; }
+  .research-scroll { padding-right: 0; }
+  .toast { left: 14px; right: 14px; max-width: none; }
 }
 </style>

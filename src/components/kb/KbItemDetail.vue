@@ -430,7 +430,8 @@ async function onDrop(event: DragEvent): Promise<void> {
 /* 只读说明挂在「正文」标题后，刻意不做成方框：否则会被误读成正文本身的内容 */
 .body-lock-hint { margin-left: 6px; font-size: 11px; font-weight: 400; color: var(--text-3); }
 .body-source {
-  min-height: 240px; font-family: var(--font-mono); font-size: 13px; line-height: 1.7;
+  /* 矮窗口下抽屉整体变矮，正文框跟着收，避免保存按钮被推到滚动区之外 */
+  min-height: min(240px, 32vh); font-family: var(--font-mono); font-size: 13px; line-height: 1.7;
 }
 .body-save { margin: 4px 0 14px; align-items: center; }
 .quiet-hint { font-size: 11.5px; }

@@ -95,19 +95,19 @@
             <span class="kind-badge" :class="itemBadgeClass(item)">
               <span class="kind-dot" />{{ itemBadgeLabel(item) }}
             </span>
-            <span v-if="item.type === 'sleep-day'" class="summary">
+            <span v-if="item.type === 'sleep-day'" class="summary" :title="itemTitleText(item)">
               总计 {{ item.totalHours.toFixed(1) }} 小时
               <template v-if="item.sessionCount"> · {{ item.sessionCount }} 段<span v-if="item.longestHours"> · 最长连续 {{ item.longestHours.toFixed(1) }} 小时</span></template>
               <template v-else> · 分段未知</template>
             </span>
-            <span v-else-if="item.type === 'chat'" class="summary chat-summary">
+            <span v-else-if="item.type === 'chat'" class="summary chat-summary" :title="itemTitleText(item)">
               {{ item.title || '未命名对话' }}
               <em class="chat-meta">{{ item.messageCount }} 条<template v-if="item.tokenCount"> · {{ item.tokenCount }} token</template> · 点击回看原文</em>
             </span>
-            <span v-else-if="item.type === 'knowledge'" class="summary">
+            <span v-else-if="item.type === 'knowledge'" class="summary" :title="itemTitleText(item)">
               《{{ item.itemTitle }}》<em class="chat-meta">{{ item.detail ? `${item.detail} · ` : '' }}点击查看内容</em>
             </span>
-            <span v-else class="summary">{{ summarize(item.entry) }}</span>
+            <span v-else class="summary" :title="itemTitleText(item)">{{ summarize(item.entry) }}</span>
             <span v-if="item.type === 'entry' && semanticOn && item.entry._score != null" class="score">
               {{ item.entry._rerank != null ? `精排 ${Math.round(item.entry._rerank * 100)}%` : `${Math.round(item.entry._score * 100)}%` }}
             </span>
@@ -689,6 +689,26 @@ function summarize(e: EntryRow): string {
   }
 }
 
+/** 悬停提示用的完整文本：列表行是单行省略，窄窗口下只能靠 title 看清内容 */
+function fullSummary(e: EntryRow): string {
+  try {
+    const c = JSON.parse(e.content) as Record<string, unknown>
+    const text = (c.text as string) ?? (c.hours != null ? `睡眠 ${c.hours} 小时` : '')
+    return text || e.raw_text
+  } catch {
+    return e.raw_text
+  }
+}
+
+function itemTitleText(item: TimelineItem): string {
+  if (item.type === 'sleep-day') {
+    return `总计 ${item.totalHours.toFixed(1)} 小时${item.sessionCount ? ` · ${item.sessionCount} 段` : ' · 分段未知'}`
+  }
+  if (item.type === 'chat') return item.title || '未命名对话'
+  if (item.type === 'knowledge') return `《${item.itemTitle}》${item.detail ? ` · ${item.detail}` : ''}`
+  return fullSummary(item.entry)
+}
+
 function toEntryRow(row: TimelineRowDto): EntryRow {
   return {
     id: row.id,
@@ -952,9 +972,9 @@ onMounted(() => void load())
 .restore { white-space: nowrap; }
 .field > .checkbox { margin: 5px 0; font-size: 12.5px; }
 
-.filters { display: flex; gap: 10px; align-items: center; font-size: 13px; flex-wrap: wrap; }
+.filters { display: flex; gap: 10px; align-items: center; font-size: 13px; flex-wrap: wrap; min-width: 0; }
 .filters .sep { color: var(--text-3); font-size: 12px; }
-.filters :deep(.dp--main) { width: 150px; }
+.filters :deep(.dp--main) { width: clamp(126px, 12vw, 150px); }
 
 .search-note {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -964,16 +984,16 @@ onMounted(() => void load())
 .search-note .warn { color: var(--warn); }
 
 /* ---- 轴线时间线 ---- */
-.tl { position: relative; }
+.tl { position: relative; --aside-w: clamp(62px, 6vw, 84px); }
 .tl::before {
   content: '';
-  position: absolute; left: 76px; top: 10px; bottom: 0;
+  position: absolute; left: var(--aside-w); top: 10px; bottom: 0;
   width: 1px; background: var(--border);
 }
-.day { display: flex; gap: 20px; }
+.day { display: flex; gap: clamp(12px, 1.4vw, 20px); }
 .day-aside {
   position: relative;
-  width: 76px; flex: 0 0 76px;
+  width: var(--aside-w); flex: 0 0 var(--aside-w);
   text-align: right; padding: 10px 16px 0 0;
 }
 .day-node {
@@ -990,12 +1010,14 @@ onMounted(() => void load())
 .entry {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto auto;
-  align-items: center; gap: 10px;
-  background: var(--surface);
+  align-items: center; gap: clamp(7px, 0.8vw, 10px);
+  background-color: var(--surface);
+  background-image: var(--card-grad);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: 9px 14px; margin-bottom: 6px;
   cursor: pointer; box-shadow: var(--shadow);
+  min-width: 0;
   transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), transform 0.15s var(--ease);
 }
 .entry:hover {
@@ -1061,7 +1083,7 @@ onMounted(() => void load())
 .chat-parsed { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; font-size: 12px; color: var(--text-2); }
 .chat-time { display: block; margin-top: 6px; font-size: 10.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 textarea.mono { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
-.sleep-day-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.sleep-day-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin-bottom: 14px; }
 .sleep-day-stats div { display: flex; flex-direction: column; padding: 12px; background: var(--surface-2); border-radius: var(--r); }
 .sleep-day-stats b { font-size: 20px; }
 .sleep-day-stats span { font-size: 11px; color: var(--text-3); }
@@ -1074,7 +1096,11 @@ textarea.mono { font-family: var(--font-mono); font-size: 12px; line-height: 1.6
 .moment-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .moment-row :deep(.dp--main) { width: 150px; }
 
-@media (max-width: 760px) {
+@media (max-width: 1024px) {
+  .entry { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+  .entry .kb-link { opacity: 1; }
+}
+@media (max-width: 720px) {
   .tl::before { display: none; }
   .day { flex-direction: column; gap: 4px; }
   .day-aside { width: auto; flex: none; text-align: left; padding: 12px 0 4px; }
@@ -1083,5 +1109,12 @@ textarea.mono { font-family: var(--font-mono); font-size: 12px; line-height: 1.6
   .day-meta { display: inline-block; margin-left: 8px; }
   .sleep-segments { grid-column: 1 / -1; }
   .sleep-day-stats { grid-template-columns: 1fr; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .entry { grid-template-columns: auto auto minmax(0, 1fr) auto; padding: 9px 11px; }
+  .entry:hover { transform: none; }
+  .entry .summary { white-space: normal; }
+  .filters .search-box { flex: 1 1 100%; }
+  .filters .search-box input { width: 100%; }
+  .moment-row :deep(.dp--main) { width: 100%; }
 }
 </style>

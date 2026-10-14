@@ -85,6 +85,33 @@ confidence: number // 0~1
 - [ ] 长度上限、枚举白名单、字符串剥离三件套齐全
 - [ ] 新 IPC 通道命名符合 `域:动作` 约定
 
+## 7. AI 技能层（提示词偏好，v0.4+）
+
+技能（skill）是用户自己写的**提示词偏好**，用于让某个 AI 区域按个人习惯工作。
+它不产生任何新的数据写入路径，因此**不进入第 1 节的数据边界表**，也不参与任何 `validate*` 的放行判断。
+
+**区域隔离（防止 skill 污染 / 输出降智的核心规则）**
+
+| 区域 scope | 承载页面与动作 | IPC 链路 |
+|---|---|---|
+| `capture` | 记录页 · AI 快速记录解析 | `capture:parse` |
+| `report.daily` | 研究页 · 生成该日日报 | `reports:generate` |
+| `report.weekly` | 研究页 · 生成该周周报 | `reports:generateWeekly` |
+| `research.plan` | 研究页 · 周度研究出题 | `labs:planResearch` |
+
+1. 一个技能只属于一个区域，`buildSkillBlock(store, scope)` 只返回该区域且已启用的技能，跨区域零注入。
+2. 技能块只追加在 system prompt **末尾**，并且必须带「次级偏好 + 输出契约优先」声明：
+   格式、JSON 字段、白名单枚举、长度上限、事实与安全规则一律优先于技能。
+3. 硬上限（`AI_SKILL_LIMITS`）：单区域启用 6 个、注入正文合计 4000 字、单条名称 24 字/说明 120 字/正文 2000 字、全库 100 条。
+   达到单区域上限时**拒绝启用并提示**，不静默丢弃。
+4. 技能正文中的 `</skill>` 等哨兵在注入前被中和，用户无法借技能段伪造额外指令。
+5. 只有启用中的技能会被注入；报告 `meta.skills` 记录本次实际生效的技能名，便于回溯输出为何是这样。
+6. 技能的增删改查只走 `skills:list` / `skills:save` / `skills:delete` / `skills:setEnabled`，
+   存储位置为本地 settings 表（键 `ai.skills`），随数据库一起备份与迁移。
+
+修改本节 = 修改技能层契约，必须同步更新 `electron/skills/registry.ts`、`electron/types.ts` 与
+`tests/skills/registry.test.ts`。
+
 ---
 
-*版本：v1（2026-09-15）。修改本文件 = 修改契约，必须同步更新 `electron/analysis/validators.ts` 与测试。*
+*版本：v1（2026-09-15，新增 §7 技能层）。修改本文件 = 修改契约，必须同步更新 `electron/analysis/validators.ts` 与测试。*

@@ -511,7 +511,7 @@ onMounted(async () => {
 .kb-body { flex: 1; min-height: 0; display: flex; gap: 18px; align-items: stretch; }
 
 .items { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
-.items-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.items-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .items-toolbar {
   display: flex; justify-content: space-between; align-items: center;
   gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
@@ -594,12 +594,20 @@ onMounted(async () => {
 .toast-enter-active, .toast-leave-active { transition: opacity 0.2s var(--ease), transform 0.2s var(--ease); }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(6px); }
 
-@media (max-width: 820px) {
-  /* 堆叠后固定高度会把两栏挤扁，这一档退回整页滚动 */
+@media (max-width: 900px) {
+  /* 堆叠后固定高度会把两栏挤扁，这一档退回整页滚动（与全局 .content-fixed 断点一致） */
   .page { display: block; height: auto; }
   .kb-body { display: block; }
   .items { display: block; }
   .items-scroll { overflow: visible; }
   .kb-toolbar { flex-direction: column; }
+}
+/* 矮窗口（宽但不高）：同样退回整页滚动，避免资料列表只剩一行高 */
+@media (max-height: 620px) {
+  .page { display: block; height: auto; }
+  .kb-body { display: block; }
+  .items { display: block; }
+  .items-scroll { overflow: visible; }
+  .kb-toolbar .hint { display: none; }
 }
 </style>

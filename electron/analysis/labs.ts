@@ -1,5 +1,5 @@
 import { Entry, Repo } from '../db/repository'
-import type { DayMetrics } from '../types'
+import { AiSkillInjection, DayMetrics, EMPTY_SKILL_INJECTION } from '../types'
 import { summarizeSleepDay } from './sleep'
 
 /**
@@ -60,19 +60,18 @@ export async function planResearch(
   llm: { chat: (m: { role: 'system' | 'user'; content: string }[]) => Promise<string> },
   threadTitles: string[],
   recentIdeas: string[],
-  requirement = ''
+  requirement = '',
+  skills: AiSkillInjection = EMPTY_SKILL_INJECTION
 ): Promise<{ queries: string[]; note: string }> {
   const userRequirement = requirement.trim().slice(0, 2000)
+  const basePrompt =
+    '你是 MindTrace 的研究向导。用户会写下本周的研究需求，你必须严格按它出题，不要替换成你自己推测的主题。规则：' +
+    '（1）有研究需求时，每个搜索词都必须直接服务于该需求，需求没提到的方向一律不要出现；' +
+    '（2）需求为空时，才依据兴趣线与最近想法推断方向，并在 note 中说明这是推断；' +
+    '（3）生成 3~5 个问题式搜索词（中文或英文，具体明确，适合搜索引擎）。' +
+    '只输出 JSON：{"queries": ["...", "..."], "note": "一句话说明为什么这些值得研究"}'
   const messages: { role: 'system' | 'user'; content: string }[] = [
-    {
-      role: 'system',
-      content:
-        '你是 MindTrace 的研究向导。用户会写下本周的研究需求，你必须严格按它出题，不要替换成你自己推测的主题。规则：' +
-        '（1）有研究需求时，每个搜索词都必须直接服务于该需求，需求没提到的方向一律不要出现；' +
-        '（2）需求为空时，才依据兴趣线与最近想法推断方向，并在 note 中说明这是推断；' +
-        '（3）生成 3~5 个问题式搜索词（中文或英文，具体明确，适合搜索引擎）。' +
-        '只输出 JSON：{"queries": ["...", "..."], "note": "一句话说明为什么这些值得研究"}'
-    },
+    { role: 'system', content: skills.block ? `${basePrompt}\n\n${skills.block}` : basePrompt },
     {
       role: 'user',
       content: `研究需求：${userRequirement || '（用户未填写）'}\n兴趣线：${JSON.stringify(threadTitles)}\n最近想法：${JSON.stringify(recentIdeas.slice(0, 10))}`

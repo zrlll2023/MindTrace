@@ -137,6 +137,12 @@ const api = {
     saveResearchDraft: (draft: unknown) => ipcRenderer.invoke('labs:saveResearchDraft', draft),
     clearResearchDraft: () => ipcRenderer.invoke('labs:clearResearchDraft')
   },
+  skills: {
+    list: () => ipcRenderer.invoke('skills:list'),
+    save: (skill: unknown) => ipcRenderer.invoke('skills:save', skill),
+    remove: (id: string) => ipcRenderer.invoke('skills:delete', id),
+    setEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('skills:setEnabled', id, enabled)
+  },
   diagnostics: {
     openLogs: () => ipcRenderer.invoke('diagnostics:openLogs'),
     export: () => ipcRenderer.invoke('diagnostics:export'),

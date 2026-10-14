@@ -5,6 +5,7 @@ import { SearchAdapter } from '../adapters/search'
 import { desensitizeText } from './desensitize'
 import { Report } from '../db/repository'
 import { sleepContext } from './sleep'
+import { AiSkillInjection, EMPTY_SKILL_INJECTION } from '../types'
 
 const MAX_TOOL_CALLS = 6
 
@@ -153,8 +154,8 @@ export class AnalyzeEngine {
     return this.opts.desensitize ? desensitizeText(text) : text
   }
 
-  /** 生成某日日报。当日无 entries 返回 null。 */
-  async analyzeDay(date: string): Promise<Report | null> {
+  /** 生成某日日报。当日无 entries 返回 null。skills 只来自「日报」区域。 */
+  async analyzeDay(date: string, skills: AiSkillInjection = EMPTY_SKILL_INJECTION): Promise<Report | null> {
     const dayEntries = await this.repo.listEntries({
       dateFrom: date,
       dateTo: date,
@@ -171,7 +172,7 @@ export class AnalyzeEngine {
     const sleep = sleepContext(date, dayEntries)
 
     const messages: ChatMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: skills.block ? `${SYSTEM_PROMPT}\n\n${skills.block}` : SYSTEM_PROMPT },
       {
         role: 'user',
         content: `日期：${date}${sleep ? `\n\n睡眠摘要：\n${sleep}` : ''}\n\n当日记录（JSON）：\n${JSON.stringify(digest, null, 2)}`
@@ -279,6 +280,7 @@ export class AnalyzeEngine {
       quoted_entry_ids: quotedIds,
       entries_count: dayEntries.length,
       threads: threads.map(t => t.title),
+      skills: skills.skills.map(s => s.name),
       degraded
     }
 
@@ -290,8 +292,8 @@ export class AnalyzeEngine {
     })
   }
 
-  /** 生成某日所在周的周报（汇总 7 天 entries + 引用已有日报） */
-  async analyzeWeek(weekEndDate: string): Promise<Report | null> {
+  /** 生成某日所在周的周报（汇总 7 天 entries + 引用已有日报）。skills 只来自「周报」区域。 */
+  async analyzeWeek(weekEndDate: string, skills: AiSkillInjection = EMPTY_SKILL_INJECTION): Promise<Report | null> {
     const end = new Date(weekEndDate)
     const start = new Date(end)
     start.setDate(start.getDate() - 6)
@@ -310,10 +312,11 @@ export class AnalyzeEngine {
       if (r) dailyReports.push({ period: r.period, summary: r.content_md.slice(0, 500) })
     }
 
+    const weeklyPrompt = `你是 MindTrace 的个人成长分析师。请基于一周的生活记录与已有日报，写一份中文周报。要求：提炼一周的规律与变化（对比前半周与后半周）、推进中的兴趣线、下周建议。小节：## 一周概况 / ## 规律与变化 / ## 兴趣线进展 / ## 下周建议。直接输出 Markdown 正文，不要代码块。`
     const messages: ChatMessage[] = [
       {
         role: 'system',
-        content: `你是 MindTrace 的个人成长分析师。请基于一周的生活记录与已有日报，写一份中文周报。要求：提炼一周的规律与变化（对比前半周与后半周）、推进中的兴趣线、下周建议。小节：## 一周概况 / ## 规律与变化 / ## 兴趣线进展 / ## 下周建议。直接输出 Markdown 正文，不要代码块。`
+        content: skills.block ? `${weeklyPrompt}\n\n${skills.block}` : weeklyPrompt
       },
       {
         role: 'user',
@@ -339,7 +342,8 @@ export class AnalyzeEngine {
         generated_at: new Date().toISOString(),
         date_from: dateFrom,
         date_to: dateTo,
-        entries_count: entries.length
+        entries_count: entries.length,
+        skills: skills.skills.map(s => s.name)
       })
     })
   }

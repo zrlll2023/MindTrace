@@ -215,3 +215,88 @@ export interface GenerateReportResult {
   error?: string
   reportId?: number
 }
+
+// ---------- AI 技能（提示词层，不写库） ----------
+
+/**
+ * 技能作用域 = 一个独立的 AI 调用区域。
+ * 技能只注入自己所属的区域，跨区域一律不注入，避免不同页面互相污染。
+ */
+export type AiSkillScope = 'capture' | 'report.daily' | 'report.weekly' | 'research.plan'
+
+export const AI_SKILL_SCOPES: AiSkillScope[] = ['capture', 'report.daily', 'report.weekly', 'research.plan']
+
+export interface AiSkillScopeMeta {
+  /** 界面上显示的技能区域名 */
+  label: string
+  /** 使用该区域 AI 的页面与动作 */
+  surface: string
+  /** 用户能感知的注入效果说明 */
+  effect: string
+}
+
+export const AI_SKILL_SCOPE_META: Record<AiSkillScope, AiSkillScopeMeta> = {
+  capture: {
+    label: 'AI 快速记录',
+    surface: '记录页 · AI 快速记录解析',
+    effect: '影响随手记录的拆条粒度、措辞与类型判断习惯'
+  },
+  'report.daily': {
+    label: '日报',
+    surface: '研究页 · 生成该日日报',
+    effect: '影响日报的观察角度、语气与小节内部的详略'
+  },
+  'report.weekly': {
+    label: '周报',
+    surface: '研究页 · 生成该周周报',
+    effect: '影响周报的对比方式、趋势提炼与建议风格'
+  },
+  'research.plan': {
+    label: '周度研究',
+    surface: '研究页 · 周度研究计划出题',
+    effect: '影响搜索词的提问角度与领域偏好'
+  }
+}
+
+/** 技能容量上限：数值刻意偏低，保证注入不会挤占正文上下文导致输出降智 */
+export const AI_SKILL_LIMITS = {
+  /** 单个技能名称长度 */
+  name: 24,
+  /** 单个技能一句话说明长度 */
+  description: 120,
+  /** 单个技能指令正文长度 */
+  content: 2000,
+  /** 单个区域最多生效的技能数量 */
+  perScope: 6,
+  /** 单个区域注入的技能正文总长度 */
+  injectChars: 4000,
+  /** 全库技能总数上限 */
+  total: 100
+} as const
+
+export interface AiSkill {
+  id: string
+  scope: AiSkillScope
+  name: string
+  /** 一句话说明这个技能是干什么的，仅用于界面展示，不注入 */
+  description: string
+  /** 注入给模型的指令正文 */
+  content: string
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export function isAiSkillScope(value: unknown): value is AiSkillScope {
+  return typeof value === 'string' && (AI_SKILL_SCOPES as string[]).includes(value)
+}
+
+/** 传给各 AI 链路的技能注入结果（block 已含安全声明与长度收敛） */
+export interface AiSkillInjection {
+  /** 追加到 system prompt 末尾的文本；无启用技能时为空串 */
+  block: string
+  /** 实际注入的技能，用于写进报告 meta 便于回溯 */
+  skills: AiSkill[]
+}
+
+export const EMPTY_SKILL_INJECTION: AiSkillInjection = { block: '', skills: [] }

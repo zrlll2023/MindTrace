@@ -8,6 +8,9 @@
       <span v-if="hasContent" class="save-state" :class="{ error: saveState === '保存失败' }">{{ saveState }}</span>
     </div>
 
+    <!-- 技能区域边界：只有「周度研究」区域的技能会随出题请求一起发出 -->
+    <SkillScopeBar scope="research.plan" />
+
     <div class="field requirement-field">
       <label>本周研究需求</label>
       <textarea
@@ -68,6 +71,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Icon from '../components/Icon.vue'
+import SkillScopeBar from './SkillScopeBar.vue'
 
 const requirement = ref('')
 /** AI 实际据以出题的需求文本；与输入框不一致时说明计划已经过时 */
@@ -274,5 +278,9 @@ function setSavedState(updatedAt: string): void {
 @media (max-width: 720px) {
   .section-head, .confirm-box { align-items: stretch; flex-direction: column; }
   .save-state { align-self: flex-start; }
+  .query-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .query-row button { align-self: flex-end; }
+  .confirm-box { flex-wrap: wrap; }
+  .confirm-box button { flex: 1 1 auto; }
 }
 </style>

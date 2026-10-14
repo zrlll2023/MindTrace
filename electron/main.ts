@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, nativeTheme, net, protocol } from 'electron'
+import { app, BrowserWindow, dialog, Menu, nativeTheme, net, protocol, screen } from 'electron'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { initContext } from './context'
@@ -22,9 +22,16 @@ protocol.registerSchemesAsPrivileged([
 
 async function createWindow() {
   const dark = nativeTheme.shouldUseDarkColors
+  // 初始尺寸跟随屏幕工作区：小屏不再开出超出屏幕的窗口，大屏也不会开得太局促
+  const workArea = screen.getPrimaryDisplay().workAreaSize
+  const width = Math.max(940, Math.min(1300, workArea.width - 96))
+  const height = Math.max(640, Math.min(880, workArea.height - 96))
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width,
+    height,
+    // 尺寸下限：再小下去表格与对话区就没有可用空间了（布局本身仍支持到 640 宽）
+    minWidth: 840,
+    minHeight: 560,
     title: 'MindTrace',
     titleBarStyle: 'hidden',
     autoHideMenuBar: true,
@@ -107,10 +114,14 @@ app.whenReady().then(async () => {
     const { VectorStore } = await import('./db/vectors.js')
     const { SemanticSearch } = await import('./analysis/semantic.js')
     const semantic = emb ? new SemanticSearch(ctx.repo, new VectorStore(ctx.repo.getDb()), emb) : null
+    // 自动日报与手动生成共用「日报」区域的技能，避免两处提示词不一致
+    const { buildSkillBlock } = await import('./skills/registry.js')
+    const dailySkills = await buildSkillBlock(ctx.repo, 'report.daily')
     await new Scheduler(ctx.repo).ensureReportForToday(ctx.getLlm(), {
       desensitize: ctx.getSettings().desensitize,
       search: ctx.getSearch(),
-      semantic
+      semantic,
+      skills: dailySkills
     })
   })().catch(error => logError('background.startup-tasks.failed', error))
   app.on('activate', () => {

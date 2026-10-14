@@ -65,7 +65,7 @@
             </div>
           </template>
           <template v-else>
-            <span class="f-name">{{ f.name }}</span>
+            <span class="f-name" :title="f.name">{{ f.name }}</span>
             <div v-if="!reorderMode && f.tags?.length" class="f-meta">
               <span v-for="tag in visibleTags(f.tags)" :key="tag" class="tag f-tag">{{ tag }}</span>
               <span v-if="f.tags.length > 2" class="tag f-tag">+{{ f.tags.length - 2 }}</span>
@@ -329,10 +329,11 @@ function commitRename(folder: KbFolder): void {
 <style scoped>
 /* 面板本身固定：标题、调整顺序、新建文件夹都不滚动，只有文件夹列表吃中间那段 */
 .folders {
-  width: 250px; flex: 0 0 250px; padding: 14px; margin-bottom: 0;
+  width: clamp(212px, 19vw, 268px); flex: 0 0 clamp(212px, 19vw, 268px);
+  padding: 14px; margin-bottom: 0;
   display: flex; flex-direction: column; min-height: 0;
 }
-.folder-list { flex: 1; min-height: 0; overflow-y: auto; }
+.folder-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .folder {
   display: flex; align-items: flex-start; gap: 8px;
   padding: 7px 8px 7px 10px; border-radius: var(--r);
@@ -389,8 +390,9 @@ function commitRename(folder: KbFolder): void {
   cursor: grabbing;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 900px) {
   .folders { width: 100%; flex: none; display: block; }
   .folder-list { flex: none; overflow: visible; }
+  .f-actions { opacity: 1; }
 }
 </style>

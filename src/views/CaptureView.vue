@@ -108,6 +108,9 @@
 
     <!-- ========== AI 快速记录 ========== -->
     <div v-else class="capture">
+      <!-- 技能区域边界：这里只认领「AI 快速记录」一个区域，日报/周报/周度研究的技能不会注入到本次解析 -->
+      <SkillScopeBar scope="capture" />
+
       <div class="chat-tools">
         <span class="hint">本次对话会保存在本机，AI 会结合最近上下文理解你的记录。</span>
         <div class="usage-strip">
@@ -138,7 +141,7 @@
           type="button"
           @click="loadSession(session.id)"
         >
-          <span class="history-item-title">{{ session.title || '未命名对话' }}</span>
+          <span class="history-item-title" :title="session.title || '未命名对话'">{{ session.title || '未命名对话' }}</span>
           <span class="history-item-meta">
             {{ formatMessageTime(session.lastMessageAt || session.createdAt) }} · {{ session.messageCount }} 条<template v-if="session.tokenCount"> · {{ session.tokenCount }} token</template>
           </span>
@@ -260,6 +263,7 @@ import { useRoute } from 'vue-router'
 import { useCaptureStore, ChatMessageItem, isCaptureEntryValid } from '../stores/capture'
 import EntryCard from '../components/EntryCard.vue'
 import Icon from '../components/Icon.vue'
+import SkillScopeBar from '../components/SkillScopeBar.vue'
 import DatePicker from '../components/DatePicker.vue'
 import TimeRangePicker, { TimeRangeValue } from '../components/TimeRangePicker.vue'
 import { EntryKind } from '../../electron/types'
@@ -608,7 +612,7 @@ watch(mode, v => {
 .mode-hint { font-size: 12px; color: var(--text-3); }
 
 /* 手动录入 */
-.manual { max-width: 720px; margin-bottom: 0; }
+.manual { max-width: min(100%, 860px); margin-bottom: 0; }
 .kinds { display: flex; gap: 8px; flex-wrap: wrap; }
 .chip.kind.on {
   background: var(--kc-weak); border-color: var(--kc); color: var(--kc);
@@ -634,8 +638,7 @@ watch(mode, v => {
 
 /* AI 聊天 */
 .capture { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.chat-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
-.chat-tool-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.chat-tools { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }.chat-tool-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .usage-strip { display: flex; gap: 10px; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
 .usage-strip .muted { opacity: 0.75; }
 .history-strip { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 0 0 8px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
@@ -650,7 +653,7 @@ watch(mode, v => {
 .title-field > label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; }
 .title-row { display: flex; gap: 7px; align-items: center; }
 .title-row input { flex: 1; min-width: 0; }
-.messages { flex: 1; overflow-y: auto; padding: 4px 4px 8px; }
+.messages { flex: 1; overflow-y: auto; padding: 4px 4px 8px; scrollbar-gutter: stable; }
 .empty { margin-top: 8vh; }
 .empty h3 { font-family: var(--font-serif); font-size: 19px; color: var(--text); }
 .empty .eg {
@@ -661,14 +664,17 @@ watch(mode, v => {
 .chat-msg { display: flex; margin: 10px 0; }
 .chat-msg.user { justify-content: flex-end; }
 .bubble {
-  max-width: 640px; padding: 11px 15px; border-radius: var(--r-lg);
-  font-size: 14px; background: var(--surface);
+  max-width: min(640px, 100%); padding: 11px 15px; border-radius: var(--r-lg);
+  font-size: 14px; background-color: var(--surface); background-image: var(--card-grad);
   border: 1px solid var(--border); box-shadow: var(--shadow);
+  min-width: 0;
 }
 .chat-msg.user .bubble {
-  background: var(--accent); color: var(--on-accent); border-color: transparent;
+  background-image: none;
+  background-color: var(--accent); color: var(--on-accent); border-color: transparent;
+  max-width: min(560px, 92%);
 }
-.chat-msg.assistant .bubble { min-width: 320px; }
+.chat-msg.assistant .bubble { min-width: min(320px, 100%); }
 .bubble .primary { margin-top: 8px; }
 .archive-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .archive-actions .primary { margin-top: 0; }
@@ -721,7 +727,7 @@ watch(mode, v => {
 .clear-dialog-copy p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.65; }
 .clear-dialog-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .capture-toast {
-  position: fixed; z-index: 70; top: 68px; right: 22px;
+  position: fixed; z-index: 70; top: calc(var(--titlebar-h) + 26px); right: 22px;
   display: flex; align-items: center; gap: 8px; max-width: min(420px, calc(100vw - 32px));
   padding: 10px 14px; border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border));
   border-radius: var(--r); color: var(--ok); background: var(--surface);
@@ -730,10 +736,20 @@ watch(mode, v => {
 }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .chat-tools { align-items: flex-start; flex-direction: column; }
   .chat-tool-actions { width: 100%; justify-content: space-between; }
   .composer { align-items: stretch; flex-direction: column; }
   .composer button { align-self: flex-end; }
+  .chat-msg.user .bubble { max-width: 100%; }
+  .history-item-title { max-width: 100%; }
+  .capture-toast { left: 14px; right: 14px; max-width: none; }
+}
+/* 矮窗口（与全局 max-height:620 同档）：先保住输入区，再压缩消息区留白 */
+@media (max-height: 620px) {
+  .composer textarea { min-height: 52px; }
+  .empty { margin-top: 3vh; }
+  .empty .eg { display: none; }
+  .bubble { padding: 9px 12px; }
 }
 </style>
