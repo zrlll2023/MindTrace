@@ -2,7 +2,7 @@
  * LLM 提供商适配器——所有 AI 功能的唯一 HTTP 入口。
  * 兼容 OpenAI 协议（/chat/completions、/models），支持 DeepSeek/智谱/Moonshot/SiliconFlow/Ollama 等。
  */
-export interface LLMConfig {
+interface LLMConfig {
   baseUrl: string
   apiKey: string
   model: string
@@ -30,17 +30,17 @@ export interface ToolSpec {
   }
 }
 
-export interface ChatOptions {
+interface ChatOptions {
   json?: boolean
   tools?: ToolSpec[]
 }
 
-export interface ModelInfo {
+interface ModelInfo {
   id: string
 }
 
 /** 规范化 baseUrl：去尾部斜杠与空白（路径由预设/用户填写完整，如 /v1 或 /api/paas/v4） */
-export function normalizeBaseUrl(raw: string): string {
+function normalizeBaseUrl(raw: string): string {
   return raw.trim().replace(/\/+$/, '')
 }
 

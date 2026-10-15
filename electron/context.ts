@@ -13,7 +13,7 @@ import { KnowledgeBase } from './db/knowledge'
  * 应用上下文：数据目录、数据库、密钥盒、LLM 适配器。
  * 由 main.ts 在 app ready 时初始化；IPC handlers 通过 getContext() 取用。
  */
-export interface AppContext {
+interface AppContext {
   dataDir: string
   repo: Repo
   secrets: SecretBox

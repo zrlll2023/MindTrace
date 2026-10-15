@@ -1,6 +1,6 @@
 import type { Entry } from '../db/repository'
 
-export interface SleepDaySummary {
+interface SleepDaySummary {
   totalHours: number | null
   sessionCount: number
   longestHours: number | null

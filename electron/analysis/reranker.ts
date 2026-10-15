@@ -1,6 +1,6 @@
 import { KeywordHit } from './hybrid'
 
-export interface RerankedHit extends KeywordHit {
+interface RerankedHit extends KeywordHit {
   rerank_score?: number
 }
 

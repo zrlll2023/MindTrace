@@ -28,7 +28,7 @@ kind 的六种取值与 content schema：
 - 已提供的用户资料是事实，只能用于理解上下文，绝不在 profileDraft 中覆盖它。`
 
 /** 从 LLM 输出中提取 JSON 数组（容忍 ```json 代码块等包装） */
-export function extractJsonArray(text: string): unknown[] {
+function extractJsonArray(text: string): unknown[] {
   const trimmed = text.trim()
   let candidate = trimmed
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -53,7 +53,7 @@ function extractJsonObject(text: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
-export interface CaptureParseResult { entries: ParsedEntry[]; profileDraft: ProfileValues }
+interface CaptureParseResult { entries: ParsedEntry[]; profileDraft: ProfileValues }
 
 function localDateTime(now: Date): { date: string; time: string } {
   const pad = (n: number) => String(n).padStart(2, '0')

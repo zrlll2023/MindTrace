@@ -41,7 +41,7 @@ export function sanitizeText(input: unknown): string {
   return t
 }
 
-export interface ValidatedEntry {
+interface ValidatedEntry {
   kind: EntryKind
   content: Record<string, unknown>
   confidence: number
@@ -134,7 +134,7 @@ function roundedHours(value: unknown): number | null {
 }
 
 /** Normalize every accepted sleep shape. Session duration is always server-derived. */
-export function normalizeSleepContent(src: Record<string, unknown>):
+function normalizeSleepContent(src: Record<string, unknown>):
   | { ok: true; content: Record<string, unknown> }
   | { ok: false; reason: string } {
   if (src.recordType === 'session') {
@@ -161,7 +161,7 @@ export function normalizeSleepContent(src: Record<string, unknown>):
   return { ok: true, content: { hours } }
 }
 
-export interface ValidatedThread {
+interface ValidatedThread {
   title: string
   description: string
   status: 'active' | 'done'

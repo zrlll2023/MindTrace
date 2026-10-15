@@ -12,7 +12,7 @@ import { IdentityProvider, ProviderIdentity } from '../types'
  * fetch 可注入，便于用假响应覆盖成功/失败分支而不联网。
  */
 
-export interface IdentityProviderMeta {
+interface IdentityProviderMeta {
   id: IdentityProvider
   label: string
   tokenUrl: string
@@ -37,13 +37,13 @@ export const IDENTITY_PROVIDER_META: Record<IdentityProvider, IdentityProviderMe
   }
 }
 
-export type IdentityFetchResponse = {
+type IdentityFetchResponse = {
   ok: boolean
   status: number
   json: () => Promise<unknown>
 }
 
-export type IdentityFetch = (
+type IdentityFetch = (
   url: string,
   init?: { headers?: Record<string, string> }
 ) => Promise<IdentityFetchResponse>
