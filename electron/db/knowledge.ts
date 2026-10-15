@@ -7,18 +7,18 @@ export const AI_QUICK_CAPTURE_FOLDER_NAME = 'AI 快速记录'
 
 export const MAX_TAG_COUNT = 6
 export const MAX_TAG_LENGTH = 12
-export const MAX_ITEM_TITLE = 200
+const MAX_ITEM_TITLE = 200
 
-export function normalizeFolderName(name: string): string {
+function normalizeFolderName(name: string): string {
   return name.normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase()
 }
 
-export function isReservedFolderName(name: string): boolean {
+function isReservedFolderName(name: string): boolean {
   return normalizeFolderName(name) === normalizeFolderName(AI_QUICK_CAPTURE_FOLDER_NAME)
 }
 
 /** 标签统一口径：去空白、单个截断、去重、限量；非数组输入一律视为没有标签 */
-export function normalizeTags(tags: unknown): string[] {
+function normalizeTags(tags: unknown): string[] {
   if (!Array.isArray(tags)) return []
   const clean: string[] = []
   for (const raw of tags) {
@@ -56,7 +56,7 @@ function updatedEntryTitle(currentTitle: string, body: string): string {
  * 「无改动」必须和「已保存」分开返回：资料没变时数据层不写库也不留痕，
  * 若仍回报成功，界面就会把空点显示成「已保存」。
  */
-export type KbUpdateResult =
+type KbUpdateResult =
   | { status: 'saved'; item: KbItem }
   | { status: 'unchanged'; item: KbItem }
   | { status: 'missing'; item: null }

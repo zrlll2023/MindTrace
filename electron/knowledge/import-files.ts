@@ -7,12 +7,12 @@ import { localizeMarkdownImages } from './assets'
 
 const SUPPORTED_EXTENSIONS = new Set(['md', 'markdown', 'txt', 'html', 'htm', 'docx', 'pptx', 'xlsx'])
 
-export interface KnowledgeImportFailure {
+interface KnowledgeImportFailure {
   fileName: string
   error: string
 }
 
-export interface KnowledgeImportResult {
+interface KnowledgeImportResult {
   items: KbItem[]
   failures: KnowledgeImportFailure[]
 }

@@ -29,7 +29,7 @@ export interface Entry extends NewEntry {
   entry_time: string | null
 }
 
-export interface EntryFilter {
+interface EntryFilter {
   dateFrom?: string
   dateTo?: string
   kind?: EntryKind
@@ -39,7 +39,7 @@ export interface EntryFilter {
   includeHidden?: boolean
 }
 
-export interface NewReport {
+interface NewReport {
   type: ReportType
   period: string
   content_md: string
@@ -51,7 +51,7 @@ export interface Report extends NewReport {
   created_at: string
 }
 
-export interface Thread {
+interface Thread {
   id: number
   title: string
   description: string
@@ -60,7 +60,7 @@ export interface Thread {
   updated_at: string
 }
 
-export interface NewThread {
+interface NewThread {
   title: string
   description?: string
   status?: string
