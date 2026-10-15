@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { readableUpdateError } from './updater-errors'
 
-export type UpdatePhase =
+type UpdatePhase =
   | 'idle'
   | 'checking'
   | 'current'
@@ -39,7 +39,7 @@ function publish(patch: Partial<UpdateState>): UpdateState {
   return state
 }
 
-export async function checkForUpdates(): Promise<UpdateState> {
+async function checkForUpdates(): Promise<UpdateState> {
   if (!app.isPackaged) return state
   if (state.phase === 'checking' || state.phase === 'downloading') return state
   publish({ phase: 'checking', error: undefined, percent: undefined })

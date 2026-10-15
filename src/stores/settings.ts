@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { AppSettings, DEFAULT_SETTINGS, ProviderPreset } from '../../electron/types'
 
-export interface SettingsPayload {
+interface SettingsPayload {
   settings: AppSettings
   hasApiKey: boolean
   hasSearchKey: boolean

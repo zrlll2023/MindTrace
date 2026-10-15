@@ -3,7 +3,7 @@ import { ref } from 'vue'
 
 /** 主题模式：固定浅色 / 固定深色 / 跟随系统 */
 export type ThemeMode = 'light' | 'dark' | 'system'
-export type ResolvedTheme = 'light' | 'dark'
+type ResolvedTheme = 'light' | 'dark'
 
 const STORAGE_KEY = 'mt-theme'
 

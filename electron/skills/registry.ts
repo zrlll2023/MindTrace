@@ -19,7 +19,7 @@ export interface SkillStore {
   setSetting(key: string, value: string): Promise<void>
 }
 
-export interface SkillBlock {
+interface SkillBlock {
   /** 可直接追加到 system prompt 末尾的文本；无启用技能时为空串 */
   block: string
   /** 实际注入的技能（按存储顺序） */
@@ -98,7 +98,7 @@ function enabledInScope(skills: AiSkill[], scope: AiSkillScope, excludeId?: stri
   return skills.filter(s => s.scope === scope && s.enabled && s.id !== excludeId).length
 }
 
-export interface SkillSaveResult {
+interface SkillSaveResult {
   ok: boolean
   skill?: AiSkill
   skills: AiSkill[]
@@ -190,12 +190,12 @@ export function sanitizeSkillContent(content: string): string {
  * `<` `>` `"` 以及换行。剔除后属性内不可能再出现 `<`/`>`，
  * 也就无法拼出 `</skill>` 或伪造新标签逃出技能段（tests/skills/registry.test.ts 有对抗用例）。
  */
-export function safeSkillName(name: string): string {
+function safeSkillName(name: string): string {
   return name.replace(/["<>\r\n]+/g, '').trim()
 }
 
 /** 只取当前区域启用的技能（跨区域零注入） */
-export function skillsForScope(skills: AiSkill[], scope: AiSkillScope): AiSkill[] {
+function skillsForScope(skills: AiSkill[], scope: AiSkillScope): AiSkill[] {
   return skills.filter(s => s.scope === scope && s.enabled)
 }
 

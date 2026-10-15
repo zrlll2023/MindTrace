@@ -17,7 +17,7 @@ export interface DayMetrics {
   sleep_data_mode: 'sessions' | 'daily_total' | 'duration_only' | 'none'
 }
 
-export interface SleepSessionContent {
+interface SleepSessionContent {
   recordType: 'session'
   /** Local date and time, formatted as YYYY-MM-DD HH:mm. */
   startAt: string
@@ -27,14 +27,14 @@ export interface SleepSessionContent {
   hours: number
 }
 
-export interface SleepDailyTotalContent {
+interface SleepDailyTotalContent {
   recordType: 'daily_total'
   date: string
   hours: number
 }
 
 /** Older and AI-parsed sleep entries may only contain a duration. */
-export interface SleepLegacyContent {
+interface SleepLegacyContent {
   hours: number
 }
 
@@ -91,7 +91,7 @@ export interface LinkedAccount extends ProviderIdentity {
 }
 
 /** 平台元信息：由主进程提供，渲染层只负责展示 */
-export interface IdentityProviderOption {
+interface IdentityProviderOption {
   id: IdentityProvider
   label: string
   /** 官方令牌创建页，界面按钮直接打开 */
