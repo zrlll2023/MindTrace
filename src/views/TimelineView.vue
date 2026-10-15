@@ -324,6 +324,7 @@
 import { onMounted, reactive, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { EntryKind, HideScope, HIDE_SCOPES, HIDE_SCOPE_LABELS, KbAction, KB_ACTION_LABELS, TimelineFilter } from '../../electron/types'
+import type { TimelineRow } from '../../electron/types'
 import Icon from '../components/Icon.vue'
 import DatePicker from '../components/DatePicker.vue'
 import TimePicker from '../components/TimePicker.vue'
@@ -345,26 +346,6 @@ interface EntryRow {
   _score?: number
   _rerank?: number
   _chunk?: string
-}
-
-/** 主进程 timeline:list 返回的合并行：记录条目或知识库操作流水 */
-interface TimelineRowDto {
-  record_type: 'entry' | 'knowledge'
-  id: number
-  event_date: string
-  event_time: string | null
-  created_at: string
-  hidden_scope: string | null
-  raw_text: string | null
-  kind: string | null
-  content: string | null
-  confidence: number | null
-  source: string | null
-  item_id: number | null
-  folder_id: number | null
-  action: string | null
-  item_title: string | null
-  detail: string | null
 }
 
 interface KnowledgeRow {
@@ -709,7 +690,7 @@ function itemTitleText(item: TimelineItem): string {
   return fullSummary(item.entry)
 }
 
-function toEntryRow(row: TimelineRowDto): EntryRow {
+function toEntryRow(row: TimelineRow): EntryRow {
   return {
     id: row.id,
     raw_text: row.raw_text ?? '',
@@ -723,7 +704,7 @@ function toEntryRow(row: TimelineRowDto): EntryRow {
   }
 }
 
-function toKnowledgeRow(row: TimelineRowDto): KnowledgeRow {
+function toKnowledgeRow(row: TimelineRow): KnowledgeRow {
   return {
     id: row.id,
     itemId: row.item_id,
@@ -763,7 +744,7 @@ async function load(reset = true): Promise<void> {
   else if (kind.value) filter.kind = kind.value
   if (dateFrom.value) filter.dateFrom = dateFrom.value
   if (dateTo.value) filter.dateTo = dateTo.value
-  const page = (await window.api.timeline.list(filter)) as TimelineRowDto[]
+  const page = (await window.api.timeline.list(filter)) as TimelineRow[]
   const pageEntries = page.filter(row => row.record_type === 'entry').map(toEntryRow)
   const pageEvents = page.filter(row => row.record_type === 'knowledge').map(toKnowledgeRow)
   entries.value = reset ? pageEntries : [...entries.value, ...pageEntries]

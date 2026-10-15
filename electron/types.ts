@@ -183,6 +183,26 @@ export interface TimelineFilter {
   showHidden?: boolean
 }
 
+/** 时间线合并行：record_type 区分记录条目与知识库操作流水。 */
+export interface TimelineRow {
+  record_type: 'entry' | 'knowledge'
+  id: number
+  event_date: string
+  event_time: string | null
+  created_at: string
+  hidden_scope: string | null
+  raw_text: string | null
+  kind: string | null
+  content: string | null
+  confidence: number | null
+  source: string | null
+  item_id: number | null
+  folder_id: number | null
+  action: string | null
+  item_title: string | null
+  detail: string | null
+}
+
 /**
  * 时间线隐去范围：只改变可见性，内容一律原样保留。
  * all 为默认选择，真正意义上「抹除这件事的存在」但仍可恢复。
