@@ -47,9 +47,6 @@ interface ValidatedEntry {
   confidence: number
 }
 
-export type ValidateResult<T> =
-  | { ok: true; entry?: T; payload?: T }
-  | { ok: false; reason: string }
 
 /** content 键白名单（契约 §2） */
 const CONTENT_KEYS: Record<EntryKind, string[]> = {
