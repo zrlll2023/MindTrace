@@ -18,6 +18,12 @@ tests/e2e/__screenshots__/
 # 这份清单保证 mindtrace.db / secrets.bin / 备份 / 导出不会被 git add . 带进去。
 *.db
 *.db.pre-probe-cleanup
+# SQLite 旁挂文件：当前整库导出不产生，但切 WAL 模式后会生成，防止误入仓。
+*.db-wal
+*.db-shm
+*.db-journal
+# TypeScript 增量编译缓存，tsc 开启 incremental 后生成。
+*.tsbuildinfo
 secrets.bin
 .mtkey
 backups/

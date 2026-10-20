@@ -89,6 +89,16 @@ feat: update MeView and labs
 修复若干问题
 ```
 
+## 架构结构基线（新代码落位规则）
+
+仓库在 `docs/superpowers/architecture/` 目录保存架构治理的结构基线，回答“新增的代码应该放在哪里、什么时候允许导出或删除”。
+
+- 该目录的入口是 `docs/superpowers/architecture/README.md`，规则主体是 `docs/superpowers/architecture/structure-baseline.md`；动手新增共享类型、渲染层工具、IPC 域或大型页面逻辑前，必须先读这两份文件。
+- 该目录是结构决策的**唯一权威出处**。开始任何结构治理或新增模块前，先按其中“新代码落位速查表”确定落位，不要凭目录名或习惯猜测。
+- 其中记录的四项明确保留例外（`resetContext`、`AccountSummary`、`GenerateReportResult`、`SleepContent`）不得删除；扫描无引用不构成删除依据。
+- 若实际代码与该基线冲突，以代码事实为准，并先向用户报告差异，再通过单独批准的波次更新基线；AI 不得自行放宽或改写基线规则。
+- 修改该目录属于治理改动，必须先在 `architecture-governance` 分支完成并单独获批；不得与业务功能改动混在同一提交。
+
 ## 仓库卫生
 
 - `.freebuff/`、`.workbuddy/`、`node_modules/`、`dist/`、`dist-electron/` 和 `release/` 都是本地元数据、依赖或构建产物，不得提交。

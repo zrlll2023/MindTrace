@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { registerSkillHandlers } from './skills'
 import { getContext } from '../context'
-import { AppSettings, HIDE_SCOPES, HideScope, IDENTITY_PROVIDERS, IdentityProvider, KbAction, PROFILE_KEYS, PROVIDER_PRESETS, ProfileValues, ResearchPlanDraft } from '../types'
+import { AppSettings, HIDE_SCOPES, HideScope, IDENTITY_PROVIDERS, IdentityProvider, KbAction, PROFILE_KEYS, ProfileValues, ResearchPlanDraft } from '../types'
+import { loadProviderPresets, mergeFetchedModels, saveUserProviderPresets } from '../store/provider-presets'
 import { parseCaptureWith } from '../analysis/parser'
 import { desensitizeText } from '../analysis/desensitize'
 import { HiddenTarget, NewEntry } from '../db/repository'
@@ -212,7 +213,37 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('settings:getPresets', () => PROVIDER_PRESETS)
+  // 预设从 resources/ai-providers.json（或用户目录覆盖文件）加载，换模型不必发版
+  ipcMain.handle('settings:getPresets', () => {
+    const c = getContext()
+    return loadProviderPresets(c.dataDir)
+  })
+
+  // 自动/手动刷新某提供商的模型列表：成功则写入用户目录预设文件，覆盖静态预设
+  ipcMain.handle(
+    'settings:refreshModels',
+    async (_e, providerId: string, baseUrl?: string, apiKey?: string) => {
+      const c = getContext()
+      const current = loadProviderPresets(c.dataDir)
+      const preset = current.find(p => p.id === providerId)
+      const key = apiKey || c.secrets.get('llm_api_key') || ''
+      const url = (baseUrl || preset?.baseUrl || c.getSettings().baseUrl || '').trim()
+      if (!url) return { ok: false, error: '请先填写 Base URL', presets: current }
+      try {
+        const { LLMAdapter } = await import('../adapters/llm.js')
+        const llm = new LLMAdapter({ baseUrl: url, apiKey: key, model: 'probe' })
+        const models = (await llm.listModels()).map(m => m.id).filter(Boolean)
+        if (!models.length) return { ok: false, error: '该服务没有返回任何模型', presets: current }
+        const next = mergeFetchedModels(current, providerId, models)
+        saveUserProviderPresets(c.dataDir, next)
+        logInfo('presets.refreshed', { providerId, count: models.length })
+        return { ok: true, models, presets: next }
+      } catch (e) {
+        // 保留原有预设，只回报错误；调用方据此提示「预设可能已过期」
+        return { ok: false, error: (e as Error).message, presets: current }
+      }
+    }
+  )
 
   ipcMain.handle('diagnostics:openLogs', async () => {
     const error = await shell.openPath(logsDirectory())
@@ -269,8 +300,21 @@ export function registerIpcHandlers(): void {
       const key = apiKey || c.secrets.get('llm_api_key') || ''
       if (!baseUrl || !model) return { ok: false, error: 'Base URL 与模型名必填' }
       const { LLMAdapter } = await import('../adapters/llm.js')
+      const { describeLlmError } = await import('../adapters/llm-errors.js')
       const adapter = new LLMAdapter({ baseUrl, apiKey: key, model })
-      return adapter.testConnection()
+      const r = await adapter.testConnection()
+      if (!r.ok) {
+        // 附带分类信息，让界面能提示「模型可能已下线」而不是只显示裸 HTTP 错误
+        const info = describeLlmError(r.error)
+        return {
+          ...r,
+          kind: info.kind,
+          title: info.title,
+          detail: info.detail,
+          suggestRefreshModels: info.suggestRefreshModels
+        }
+      }
+      return r
     }
   )
 

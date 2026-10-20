@@ -102,7 +102,7 @@ describe('技能 IPC 注册与主入口接线', () => {
     expect(getContext).not.toHaveBeenCalled()
   })
 
-  it('主入口保持全部 89 个注册项及其顺序，且每个技能通道只注册一次', () => {
+  it('主入口保持全部 90 个注册项及其顺序，且每个技能通道只注册一次', () => {
     ipc.callbacks.clear()
     ipc.registrations.length = 0
     registerIpcHandlers()
@@ -112,7 +112,7 @@ describe('技能 IPC 注册与主入口接线', () => {
       settings:save settings:openDataDir settings:openPreviousDataDir settings:selectDataDir
       settings:selectExportDir settings:clearExportDir settings:inspectDataMigration settings:migrateData
       settings:undoDataMigration settings:restoreDefaultDataDir settings:restart settings:getPresets
-      diagnostics:openLogs diagnostics:export diagnostics:clear on:diagnostics:rendererError
+      settings:refreshModels diagnostics:openLogs diagnostics:export diagnostics:clear on:diagnostics:rendererError
       llm:listModels llm:testConnection skills:list skills:save
       skills:delete skills:setEnabled capture:list capture:sessions
       capture:defaultTitle capture:usage capture:generateTitle capture:parse
@@ -133,7 +133,7 @@ describe('技能 IPC 注册与主入口接线', () => {
       labs:saveFinding
     `.trim().split(/\s+/)
     expect(ipc.registrations).toEqual(expected)
-    expect(ipc.callbacks.size).toBe(88)
+    expect(ipc.callbacks.size).toBe(89)
     expect(getContext).not.toHaveBeenCalled()
   })
 })
@@ -246,7 +246,7 @@ describe('技能 IPC 的真实文件库持久化', () => {
         const snapshot = fs.readFileSync(path.join(dir, 'mindtrace.db'))
         const result = await invoke('skills:list')
         expect(save).not.toHaveBeenCalled()
-        expect(fs.readFileSync(path.join(dir, 'mindtrace.db'))).toEqual(snapshot)
+        expect(fs.readFileSync(path.join(dir, 'mindtrace.db')).equals(snapshot)).toBe(true)
         return result
       }
 
@@ -273,7 +273,7 @@ describe('技能 IPC 的真实文件库持久化', () => {
       const snapshot = fs.readFileSync(path.join(dir, 'mindtrace.db'))
       expect((await invoke('skills:delete', 'missing')).ok).toBe(false)
       expect(save).not.toHaveBeenCalled()
-      expect(fs.readFileSync(path.join(dir, 'mindtrace.db'))).toEqual(snapshot)
+      expect(fs.readFileSync(path.join(dir, 'mindtrace.db')).equals(snapshot)).toBe(true)
 
       expect((await invoke('skills:delete', id)).ok).toBe(true)
       expect(save).toHaveBeenCalledTimes(1)
