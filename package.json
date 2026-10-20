@@ -12,7 +12,8 @@
     "build": "vite build && tsc -p tsconfig.node.json",
     "test": "vitest run",
     "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "dist": "pnpm build && electron-builder --win"
+    "dist": "pnpm build && electron-builder --win",
+    "release:notes": "node scripts/sync-release-notes.mjs"
   },
   "author": "zrlll2023",
   "license": "MIT",

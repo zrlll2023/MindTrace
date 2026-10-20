@@ -41,6 +41,15 @@ jobs:
             throw "Tag version $tagVersion does not match package.json version $packageVersion"
           }
 
+      - name: Verify release notes exist
+        shell: pwsh
+        run: |
+          $notes = "docs/releases/${{ github.ref_name }}.md"
+          if (-not (Test-Path $notes)) {
+            throw "Release notes not found: $notes. Create it before pushing the tag."
+          }
+          Write-Host "Release notes: $notes"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -60,9 +69,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: MindTrace ${{ github.ref_name }}
+          body_path: docs/releases/${{ github.ref_name }}.md
           draft: false
           prerelease: false
-          generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
             release/*.exe
