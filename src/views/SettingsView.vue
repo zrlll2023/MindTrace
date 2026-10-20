@@ -30,6 +30,20 @@
       <h3>AI 服务</h3>
       <p class="hint">API Key 加密存储在本机（Windows DPAPI），永远不会明文落盘。</p>
 
+      <!-- 预设失效等分类错误：给出标题、原因与可操作建议，不展示裸 HTTP 错误 -->
+      <div v-if="llmError" class="llm-error">
+        <div class="llm-error-head">
+          <strong>⚠ {{ llmError.title }}</strong>
+          <button class="ghost small" type="button" @click="llmError = null">知道了</button>
+        </div>
+        <p class="llm-error-detail">{{ llmError.detail }}</p>
+        <div v-if="llmError.suggestRefreshModels" class="llm-error-actions">
+          <button class="secondary small" type="button" :disabled="fetchingModels" @click="onFetchModels">
+            {{ fetchingModels ? '刷新中…' : '从服务商拉取可用模型' }}
+          </button>
+        </div>
+      </div>
+
       <div class="field">
         <label>提供商预设</label>
         <SelectField v-model="presetId" :options="providerOptions" @change="onPresetChange" />
@@ -42,19 +56,29 @@
       </div>
 
       <div class="field">
-        <label>模型</label>
-        <div class="row">
-          <ComboboxField v-model="form.model" :options="models" placeholder="例如 deepseek-chat" />
-          <button class="secondary" :disabled="fetchingModels" @click="onFetchModels">
-            {{ fetchingModels ? '刷新中…' : '刷新账户可用模型' }}
-          </button>
-        </div>
-        <p v-if="models.length" class="hint">共 {{ models.length }} 个模型，可直接下拉选择</p>
-      </div>
-
-      <div class="field">
         <label>API Key {{ store.payload.hasApiKey ? '（已保存，留空则不修改）' : '' }}</label>
         <input v-model="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+      </div>
+
+      <!-- 模型放在 API Key 之后：拉取模型清单需要 Base URL + Key，先填 Key 再选模型符合操作顺序 -->
+      <div class="field">
+        <label>模型</label>
+        <div class="row">
+          <ComboboxField v-model="form.model" :options="models" placeholder="填好上面的 Base URL 与 API Key 后点右侧拉取" />
+          <button class="secondary" :disabled="fetchingModels || !form.baseUrl.trim()" @click="onFetchModels">
+            {{ fetchingModels ? '拉取中…' : '从服务商拉取' }}
+          </button>
+        </div>
+        <!-- 模型来源说明：优先用服务商实时返回的清单，预设只是离线兜底 -->
+        <p v-if="modelsFromServer" class="hint ok-hint">
+          共 {{ models.length }} 个模型，来自服务商实时返回（{{ modelsFromServer }}）
+        </p>
+        <p v-else-if="models.length" class="hint">
+          共 {{ models.length }} 个内置预设模型，可能已过期。
+          <button type="button" class="link-like" :disabled="fetchingModels || !form.baseUrl.trim()" @click="onFetchModels">
+            从服务商拉取最新清单
+          </button>
+        </p>
       </div>
 
       <div class="field">
@@ -274,6 +298,10 @@ const saving = ref(false)
 const testing = ref(false)
 const exportLocationMessage = ref('')
 const exportLocationOk = ref(false)
+/** 模型清单来源：非空表示来自服务商 /models 实时返回（值形如 "10:32 拉取"），为空表示仍是内置预设 */
+const modelsFromServer = ref('')
+/** 预设失效等分类错误的详情，展示在 AI 服务区域顶部 */
+const llmError = ref<{ title: string; detail: string; suggestRefreshModels: boolean } | null>(null)
 
 onMounted(async () => {
   await store.load()
@@ -282,12 +310,19 @@ onMounted(async () => {
   const p = store.presets.find(p => p.id === form.providerId)
   if (p) { presetId.value = p.id; models.value = [...p.models] }
   await skillStore.load()
+  // 首次使用自动拉取一次 /models（仅在已配置 Key 且从未自动刷新过时执行）
+  void store.autoRefreshModelsOnce().then(() => {
+    const latest = store.presets.find(x => x.id === presetId.value)
+    if (latest) models.value = [...latest.models]
+  })
 })
 
 function onPresetChange(): void {
   const p = store.presets.find(p => p.id === presetId.value)
   if (p && p.baseUrl) form.baseUrl = p.baseUrl
   models.value = p ? [...p.models] : []
+  // 切换提供商后，之前的实时清单不再适用于新服务商，回到「内置预设」状态
+  modelsFromServer.value = ''
   if (models.value.length && !models.value.includes(form.model)) form.model = models.value[0]
   form.providerId = presetId.value
 }
@@ -297,9 +332,29 @@ async function onFetchModels(): Promise<void> {
     store.show('请先填写 Base URL', false)
     return
   }
+  // Key 没填也没存过时，明确提示：多数服务商的 /models 需要鉴权
+  if (!apiKey.value && !store.payload.hasApiKey) {
+    store.show('请先填写 API Key，再拉取模型清单', false)
+    return
+  }
   fetchingModels.value = true
   try {
-    models.value = await store.fetchModels(form.baseUrl, apiKey.value || undefined)
+    // 走 refreshProviderModels：成功会把实时列表写回预设缓存，下次开屏即为最新
+    const r = await store.refreshProviderModels(presetId.value, form.baseUrl, apiKey.value || undefined)
+    if (r.ok && r.models.length) {
+      models.value = r.models
+      if (!models.value.includes(form.model)) form.model = models.value[0]
+      llmError.value = null
+      modelsFromServer.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      store.show(`已从服务商拉取 ${r.models.length} 个可用模型`, true)
+    } else {
+      // 刷新失败本身就是「预设可能过期」的强信号，给出可操作提示
+      llmError.value = {
+        title: '无法获取模型列表',
+        detail: `${r.error ?? '服务商没有返回模型'}\n请检查 Base URL 与 API Key；如果之前能用而突然失败，很可能是内置预设里的模型已被服务商下线。`,
+        suggestRefreshModels: false
+      }
+    }
   } finally {
     fetchingModels.value = false
   }
@@ -311,17 +366,41 @@ async function onSave(): Promise<void> {
     await store.save({ ...form }, apiKey.value || undefined, searchKey.value)
     apiKey.value = ''
     searchKey.value = ''
+    // 保存后立即尝试拉取一次模型清单，让用户马上看到这个 Key 能用哪些模型
+    if (form.baseUrl.trim() && store.payload.hasApiKey) {
+      const r = await store.refreshProviderModels(presetId.value, form.baseUrl)
+      if (r.ok && r.models.length) {
+        models.value = r.models
+        if (!models.value.includes(form.model)) form.model = models.value[0]
+        llmError.value = null
+        modelsFromServer.value = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      }
+    }
   } finally {
     saving.value = false
   }
 }
 
-async function onTest(): Promise<void> {
-  testing.value = true
+async function onTest(): Promise<void> {  testing.value = true
   try {
     const r = await store.testConnection(form.baseUrl, apiKey.value || undefined, form.model)
-    if (r.ok) store.show('✅ 连接成功', true)
-    else store.show(`❌ 连接失败：${r.error}`, false)
+    if (r.ok) {
+      llmError.value = null
+      store.show('✅ 连接成功', true)
+    } else {
+      // 分类错误：模型下线时明确告诉用户该怎么做，而不是抛一段 HTTP 响应
+      const info = r as { title?: string; detail?: string; suggestRefreshModels?: boolean }
+      if (info.title && info.detail) {
+        llmError.value = {
+          title: info.title,
+          detail: info.detail,
+          suggestRefreshModels: !!info.suggestRefreshModels
+        }
+        store.show(`❌ ${info.title}`, false)
+      } else {
+        store.show(`❌ 连接失败：${r.error}`, false)
+      }
+    }
   } finally {
     testing.value = false
   }
@@ -412,6 +491,37 @@ function showExportLocationMessage(message: string, ok: boolean): void {
 .card > h3 { margin-bottom: 4px; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
 .card-head h3 { margin: 0; }
+
+/* 预设失效提示：醒目但不刺眼，强调「可以怎么办」 */
+.llm-error {
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--warn, #d97706) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn, #d97706) 10%, transparent);
+}
+.llm-error-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.llm-error-head strong { font-size: 13px; }
+.llm-error-detail { margin: 6px 0 0; font-size: 12.5px; line-height: 1.6; white-space: pre-line; color: var(--text-2); }
+.llm-error-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.llm-error-link { font-size: 12.5px; color: var(--accent); }
+
+/* 行内文字按钮：承担链接语义，但不触发导航（Electron 主窗口禁止跳转外链） */
+.link-like {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-like:disabled { color: var(--text-3); cursor: not-allowed; text-decoration: none; }
+
+/* 模型清单来自服务商实时返回时的正向反馈 */
+.ok-hint { color: var(--ok, #16a34a); }
 
 /* 最大化窗口后单列会留下大片空白：卡片改两栏，页头与技能中心横跨整行 */
 @media (min-width: 1500px) {

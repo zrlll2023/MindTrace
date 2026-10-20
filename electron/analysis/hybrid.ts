@@ -17,7 +17,7 @@ export interface KeywordHit {
   chunk_text?: string
 }
 
-export interface FusedHit {
+interface FusedHit {
   id: number
   score: number
 }

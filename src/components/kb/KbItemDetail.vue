@@ -115,7 +115,8 @@ import Icon from '../Icon.vue'
 import MarkdownBody from './MarkdownBody.vue'
 import KbTagEditor from './KbTagEditor.vue'
 import { renderFormatFor } from '../../utils/kb-render'
-import { itemTags, typeLabel, type KbItem } from '../../utils/knowledge'
+import { itemTags, typeLabel } from '../../utils/knowledge'
+import type { KbItem } from '../../../electron/types'
 import { formatSqlDateTime } from '../../utils/datetime'
 
 const props = defineProps<{ item: KbItem; bodyLocked: boolean }>()

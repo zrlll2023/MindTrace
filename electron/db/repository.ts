@@ -1,5 +1,6 @@
 import { Database } from 'sql.js'
 import { HideScope } from '../types'
+import type { TimelineRow } from '../types'
 import { isFtsAvailable, persistDb } from './connection'
 
 export type EntryKind = 'sleep' | 'event' | 'conversation' | 'quote' | 'idea' | 'other'
@@ -28,7 +29,7 @@ export interface Entry extends NewEntry {
   entry_time: string | null
 }
 
-export interface EntryFilter {
+interface EntryFilter {
   dateFrom?: string
   dateTo?: string
   kind?: EntryKind
@@ -38,27 +39,7 @@ export interface EntryFilter {
   includeHidden?: boolean
 }
 
-/** 时间线合并行：record_type 区分记录条目与知识库操作流水 */
-export interface TimelineRow {
-  record_type: 'entry' | 'knowledge'
-  id: number
-  event_date: string
-  event_time: string | null
-  created_at: string
-  hidden_scope: string | null
-  raw_text: string | null
-  kind: string | null
-  content: string | null
-  confidence: number | null
-  source: string | null
-  item_id: number | null
-  folder_id: number | null
-  action: string | null
-  item_title: string | null
-  detail: string | null
-}
-
-export interface NewReport {
+interface NewReport {
   type: ReportType
   period: string
   content_md: string
@@ -70,7 +51,7 @@ export interface Report extends NewReport {
   created_at: string
 }
 
-export interface Thread {
+interface Thread {
   id: number
   title: string
   description: string
@@ -79,7 +60,7 @@ export interface Thread {
   updated_at: string
 }
 
-export interface NewThread {
+interface NewThread {
   title: string
   description?: string
   status?: string

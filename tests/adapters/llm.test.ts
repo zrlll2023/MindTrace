@@ -5,7 +5,7 @@ function jsonResp(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 
-const cfg = { baseUrl: 'https://api.deepseek.com', apiKey: 'sk-x', model: 'deepseek-chat' }
+const cfg = { baseUrl: 'https://api.deepseek.com', apiKey: 'sk-x', model: 'deepseek-flash' }
 
 describe('LLMAdapter', () => {
   beforeEach(() => {
@@ -24,7 +24,7 @@ describe('LLMAdapter', () => {
     expect(out).toBe('你好')
     expect(calls[0].url).toBe('https://api.deepseek.com/chat/completions')
     const body = JSON.parse(calls[0].init.body as string)
-    expect(body.model).toBe('deepseek-chat')
+    expect(body.model).toBe('deepseek-flash')
     expect(body.messages).toEqual([{ role: 'user', content: 'hi' }])
     expect(calls[0].init.headers).toMatchObject({ Authorization: 'Bearer sk-x' })
   })
@@ -42,11 +42,11 @@ describe('LLMAdapter', () => {
 
   it('listModels 解析 /models 返回', async () => {
     vi.stubGlobal('fetch', async () =>
-      jsonResp({ data: [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }] })
+      jsonResp({ data: [{ id: 'deepseek-flash' }, { id: 'deepseek-v4-pro' }] })
     )
     const a = new LLMAdapter(cfg)
     const models = await a.listModels()
-    expect(models.map(m => m.id)).toContain('deepseek-chat')
+    expect(models.map(m => m.id)).toContain('deepseek-flash')
   })
 
   it('listModels 支持 base 路径含 /v1 的写法', async () => {

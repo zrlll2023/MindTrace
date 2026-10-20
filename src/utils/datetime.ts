@@ -4,7 +4,7 @@ export function localDateString(date = new Date()): string {
 }
 
 /** SQLite 的 datetime('now','localtime') 已是不带时区的本地串，只能按位取，不能 new Date 解析 */
-export function sqlDatePart(value: string | null | undefined): string {
+function sqlDatePart(value: string | null | undefined): string {
   const text = String(value ?? '').trim()
   return text.length >= 10 ? text.slice(0, 10) : ''
 }

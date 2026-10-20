@@ -3,9 +3,9 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 interface LocationConfig { dataDir: string; previousDir?: string }
-export interface LocationStatus { configuredDir: string | null; previousDir: string | null }
+interface LocationStatus { configuredDir: string | null; previousDir: string | null }
 
-export function locationFile(userDataDir: string): string { return path.join(userDataDir, 'data-location.json') }
+function locationFile(userDataDir: string): string { return path.join(userDataDir, 'data-location.json') }
 export function defaultDataDir(userDataDir: string): string { return path.join(userDataDir, 'data') }
 
 export function resolveDataDir(userDataDir: string): string {

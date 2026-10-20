@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { AppSettings, DEFAULT_SETTINGS, ProviderPreset } from '../../electron/types'
 
-export interface SettingsPayload {
+interface SettingsPayload {
   settings: AppSettings
   hasApiKey: boolean
   hasSearchKey: boolean
@@ -61,6 +61,45 @@ export const useSettingsStore = defineStore('settings', () => {
     return r.models.map((m: { id: string }) => m.id)
   }
 
+  /**
+   * 刷新某个提供商的模型列表，并写回预设缓存。
+   * 首次进入设置页、已配置 Key 且从未刷新过时自动调用一次。
+   */
+  async function refreshProviderModels(
+    providerId: string,
+    baseUrl?: string,
+    apiKey?: string
+  ): Promise<{ ok: boolean; error?: string; models: string[] }> {
+    const r = await window.api.settings.refreshModels(providerId, baseUrl, apiKey)
+    if (Array.isArray(r?.presets)) presets.value = r.presets
+    return { ok: !!r?.ok, error: r?.error, models: Array.isArray(r?.models) ? r.models : [] }
+  }
+
+  /** 是否已为本机自动刷新过一次模型列表（只影响自动触发，不阻止手动刷新） */
+  const AUTO_REFRESH_FLAG = 'mindtrace.models.autoRefreshed.v1'
+
+  /**
+   * 首次使用自动拉取 /models：仅在「已保存 API Key」且「本机从未自动刷新过」时执行一次。
+   * 失败不打扰用户（静默记入 message），避免开屏就弹错误。
+   */
+  async function autoRefreshModelsOnce(): Promise<void> {
+    try {
+      if (localStorage.getItem(AUTO_REFRESH_FLAG)) return
+      if (!payload.value.hasApiKey) return
+      const s = payload.value.settings
+      if (!s.baseUrl) return
+      const r = await refreshProviderModels(s.providerId, s.baseUrl)
+      if (r.ok) {
+        localStorage.setItem(AUTO_REFRESH_FLAG, new Date().toISOString())
+      } else {
+        // 不标记为已完成：允许用户下次手动刷新；但也不反复自动重试
+        localStorage.setItem(AUTO_REFRESH_FLAG, 'failed:' + new Date().toISOString())
+      }
+    } catch {
+      // 自动刷新永远不应影响设置页可用性
+    }
+  }
+
   async function testConnection(baseUrl: string, apiKey?: string, model?: string) {
     return window.api.llm.testConnection(baseUrl, apiKey, model)
   }
@@ -85,6 +124,8 @@ export const useSettingsStore = defineStore('settings', () => {
     load,
     save,
     fetchModels,
+    refreshProviderModels,
+    autoRefreshModelsOnce,
     testConnection,
     openDataDir,
     openPreviousDataDir,

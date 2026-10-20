@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const ASSET_SCHEME = 'mindtrace-asset'
-export const ASSET_HOST = 'local'
+const ASSET_HOST = 'local'
 
 const ASSET_DIR_NAME = 'knowledge-assets'
 const ALLOWED_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg'])
@@ -12,7 +12,7 @@ const ASSET_NAME_PATTERN = /^[a-f0-9]{20}\.[a-z]{3,4}$/
 const MARKDOWN_IMAGE_REF = /(!\[[^\]]*\]\()\s*(<[^>]*>|[^)\s]+)(\s+[^)]*)?(\))/g
 
 /** 图片落在数据目录下的独立文件夹：sql.js 每次保存都全量重写整库，二进制不能进数据库 */
-export function knowledgeAssetsDir(dataDir: string): string {
+function knowledgeAssetsDir(dataDir: string): string {
   return path.join(dataDir, ASSET_DIR_NAME)
 }
 

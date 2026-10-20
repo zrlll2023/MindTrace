@@ -1,7 +1,7 @@
 import { Database } from 'sql.js'
 import { ParsedEntry, ProfileValues } from '../types'
 
-export interface CaptureMessage {
+interface CaptureMessage {
   id: number
   role: 'user' | 'assistant'
   text: string
@@ -15,7 +15,7 @@ export interface CaptureMessage {
   usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number }
 }
 
-export interface CaptureSession {
+interface CaptureSession {
   id: string
   title: string
   status: 'active' | 'archived'

@@ -3,7 +3,7 @@
  * 兼容 DeepSeek/智谱/SiliconFlow/OpenAI 等提供 embedding 的服务商，以及本地 Ollama。
  */
 
-export interface EmbeddingConfig {
+interface EmbeddingConfig {
   baseUrl: string
   apiKey: string
   model: string

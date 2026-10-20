@@ -2,7 +2,9 @@
  * LLM 提供商适配器——所有 AI 功能的唯一 HTTP 入口。
  * 兼容 OpenAI 协议（/chat/completions、/models），支持 DeepSeek/智谱/Moonshot/SiliconFlow/Ollama 等。
  */
-export interface LLMConfig {
+import { describeLlmError } from './llm-errors'
+
+interface LLMConfig {
   baseUrl: string
   apiKey: string
   model: string
@@ -30,18 +32,28 @@ export interface ToolSpec {
   }
 }
 
-export interface ChatOptions {
+interface ChatOptions {
   json?: boolean
   tools?: ToolSpec[]
 }
 
-export interface ModelInfo {
+interface ModelInfo {
   id: string
 }
 
 /** 规范化 baseUrl：去尾部斜杠与空白（路径由预设/用户填写完整，如 /v1 或 /api/paas/v4） */
-export function normalizeBaseUrl(raw: string): string {
+function normalizeBaseUrl(raw: string): string {
   return raw.trim().replace(/\/+$/, '')
+}
+
+/**
+ * 把 HTTP 失败包装成带分类信息的错误：错误消息里既有原始状态与响应，
+ * 也有一段面向用户的中文说明，避免上层只能展示裸的 `HTTP 400`。
+ */
+function enrichLlmError(status: number, body: string): string {
+  const base = `LLM 请求失败 HTTP ${status}: ${body.slice(0, 300)}`
+  const info = describeLlmError(base)
+  return `${info.title}｜${info.detail}｜原始信息：${base}`
 }
 
 export class LLMAdapter {
@@ -77,7 +89,7 @@ export class LLMAdapter {
     })
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      throw new Error(`LLM 请求失败 HTTP ${res.status}: ${text.slice(0, 300)}`)
+      throw new Error(enrichLlmError(res.status, text))
     }
     const data = (await res.json()) as {
       choices?: { message?: { content?: string | null } }[]
@@ -107,7 +119,7 @@ export class LLMAdapter {
     })
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      throw new Error(`LLM 请求失败 HTTP ${res.status}: ${text.slice(0, 300)}`)
+      throw new Error(enrichLlmError(res.status, text))
     }
     const data = (await res.json()) as {
       choices?: { message?: { content?: string | null; tool_calls?: ToolCall[] } }[]
@@ -169,7 +181,7 @@ export class LLMAdapter {
     })
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      throw new Error(`LLM 请求失败 HTTP ${res.status}: ${text.slice(0, 300)}`)
+      throw new Error(enrichLlmError(res.status, text))
     }
     return (await res.json()) as {
       choices: { message: { content?: string | null; tool_calls?: ToolCall[] } }[]
@@ -179,7 +191,9 @@ export class LLMAdapter {
   async listModels(): Promise<ModelInfo[]> {
     const res = await fetch(`${this.base()}/models`, { headers: this.headers() })
     if (!res.ok) {
-      throw new Error(`拉取模型列表失败 HTTP ${res.status}`)
+      const text = await res.text().catch(() => '')
+      const info = describeLlmError(`拉取模型列表失败 HTTP ${res.status}: ${text.slice(0, 200)}`)
+      throw new Error(`${info.title}｜${info.detail}｜原始信息：HTTP ${res.status}`)
     }
     const data = (await res.json()) as { data?: { id: string }[] }
     return (data.data ?? []).map(m => ({ id: m.id }))

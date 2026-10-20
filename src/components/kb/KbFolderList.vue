@@ -121,7 +121,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from '../Icon.vue'
-import { AI_QUICK_CAPTURE_FOLDER_KEY, isSystemFolder, type KbFolder } from '../../utils/knowledge'
+import { AI_QUICK_CAPTURE_FOLDER_KEY, isSystemFolder } from '../../utils/knowledge'
+import type { KbFolder } from '../../../electron/types'
 
 /** 与左侧导航调序一致的长按门槛，两处手感必须相同 */
 const HOLD_MS = 450

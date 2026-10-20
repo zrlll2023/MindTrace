@@ -33,7 +33,7 @@ export function parseExportZip(zipBytes: Uint8Array): ImportedConversation[] {
   throw new Error('无法识别的导出格式（既非 ChatGPT 也非 Claude）')
 }
 
-export interface ImportSummary {
+interface ImportSummary {
   conversations: number
   knowledgeItems: number
   timelineSummaries: number

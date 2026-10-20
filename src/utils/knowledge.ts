@@ -1,37 +1,11 @@
+import type { KbFolder, KbItem } from '../../electron/types'
+
 export const AI_QUICK_CAPTURE_FOLDER_KEY = 'ai_quick_capture'
 
 // 与数据层 electron/db/knowledge.ts 的同名上限保持一致；
 // 渲染进程不直接引主进程模块，否则 sql.js 会被卷进前端产物
 export const MAX_TAG_COUNT = 6
 export const MAX_TAG_LENGTH = 12
-
-export interface KbFolder {
-  id: number
-  name: string
-  description: string
-  system_key: string | null
-  created_at: string
-  sort_order: number | null
-  tags: string[]
-}
-
-export interface KbItem {
-  id: number
-  folder_id: number
-  title: string
-  source_type: string
-  body: string
-  file_path: string
-  reason: string
-  reflection: string
-  ai_summary: string
-  source_entry_id: number | null
-  import_key: string | null
-  created_at: string
-  updated_at: string
-  title_locked: number | null
-  tags: string[]
-}
 
 /** 标签列可能来自旧返回值或还没写过，统一容错成数组再进编辑组件 */
 export function itemTags(item: KbItem | null): string[] {

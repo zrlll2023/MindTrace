@@ -4,7 +4,7 @@ import { unzipSync, strFromU8 } from 'fflate'
  * 办公文档纯 JS 文本提取（契约约束：禁原生模块）。
  * docx/pptx/xlsx 都是 ZIP 容器，直接解包读 XML，无需 office 套件。
  */
-export type OfficeKind = 'docx' | 'pptx' | 'xlsx'
+type OfficeKind = 'docx' | 'pptx' | 'xlsx'
 
 const XML_EXT = /\.(xml|rels)$/i
 
@@ -40,7 +40,7 @@ function paragraphs(xml: string, _blockTag: string | null, re: RegExp): string {
   return out.join('\n')
 }
 
-export function decodeXml(s: string): string {
+function decodeXml(s: string): string {
   return s
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')

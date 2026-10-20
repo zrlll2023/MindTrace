@@ -3,14 +3,14 @@ import { Repo } from './repository'
 import { EmbeddingAdapter, cosineSimilarity } from '../adapters/embedding'
 import { chunkText } from '../analysis/chunker'
 
-export interface VectorHit {
+interface VectorHit {
   entry_id: number
   score: number
   chunk_index: number
   chunk_text: string
 }
 
-export interface ChunkInput {
+interface ChunkInput {
   index: number
   text: string
   vector: number[]

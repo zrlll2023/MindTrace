@@ -3,13 +3,13 @@
  * 仅在用户配置了搜索 Key 时启用；报告引擎以工具形式调用。
  */
 
-export interface SearchResult {
+interface SearchResult {
   title: string
   url: string
   snippet: string
 }
 
-export interface SearchConfig {
+interface SearchConfig {
   provider: 'tavily' | 'bocha'
   apiKey: string
 }

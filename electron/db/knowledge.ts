@@ -1,23 +1,24 @@
 import { Database } from 'sql.js'
 import { KbAction } from '../types'
+import type { KbFolder, KbItem } from '../types'
 
 export const AI_QUICK_CAPTURE_FOLDER_KEY = 'ai_quick_capture'
 export const AI_QUICK_CAPTURE_FOLDER_NAME = 'AI 快速记录'
 
 export const MAX_TAG_COUNT = 6
 export const MAX_TAG_LENGTH = 12
-export const MAX_ITEM_TITLE = 200
+const MAX_ITEM_TITLE = 200
 
-export function normalizeFolderName(name: string): string {
+function normalizeFolderName(name: string): string {
   return name.normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase()
 }
 
-export function isReservedFolderName(name: string): boolean {
+function isReservedFolderName(name: string): boolean {
   return normalizeFolderName(name) === normalizeFolderName(AI_QUICK_CAPTURE_FOLDER_NAME)
 }
 
 /** 标签统一口径：去空白、单个截断、去重、限量；非数组输入一律视为没有标签 */
-export function normalizeTags(tags: unknown): string[] {
+function normalizeTags(tags: unknown): string[] {
   if (!Array.isArray(tags)) return []
   const clean: string[] = []
   for (const raw of tags) {
@@ -50,40 +51,12 @@ function updatedEntryTitle(currentTitle: string, body: string): string {
  * 文件夹 → 资料条目；条目携带用户的「收录原因」与「感受记录」，以及可选的 AI 总结。
  * AI 只在用户点按钮时写入 ai_summary 辅助字段，绝不垄断增删改。
  */
-export interface KbFolder {
-  id: number
-  name: string
-  description: string
-  system_key: string | null
-  created_at: string
-  sort_order: number | null
-  tags: string[]
-}
-
-export interface KbItem {
-  id: number
-  folder_id: number
-  title: string
-  source_type: string // markdown | docx | pptx | xlsx | html | text
-  body: string
-  file_path: string
-  reason: string
-  reflection: string
-  ai_summary: string
-  source_entry_id: number | null
-  import_key: string | null
-  created_at: string
-  updated_at: string
-  title_locked: number | null
-  tags: string[]
-}
-
 /**
  * 写操作的真实结果。
  * 「无改动」必须和「已保存」分开返回：资料没变时数据层不写库也不留痕，
  * 若仍回报成功，界面就会把空点显示成「已保存」。
  */
-export type KbUpdateResult =
+type KbUpdateResult =
   | { status: 'saved'; item: KbItem }
   | { status: 'unchanged'; item: KbItem }
   | { status: 'missing'; item: null }

@@ -17,7 +17,7 @@ export interface DayMetrics {
   sleep_data_mode: 'sessions' | 'daily_total' | 'duration_only' | 'none'
 }
 
-export interface SleepSessionContent {
+interface SleepSessionContent {
   recordType: 'session'
   /** Local date and time, formatted as YYYY-MM-DD HH:mm. */
   startAt: string
@@ -27,14 +27,14 @@ export interface SleepSessionContent {
   hours: number
 }
 
-export interface SleepDailyTotalContent {
+interface SleepDailyTotalContent {
   recordType: 'daily_total'
   date: string
   hours: number
 }
 
 /** Older and AI-parsed sleep entries may only contain a duration. */
-export interface SleepLegacyContent {
+interface SleepLegacyContent {
   hours: number
 }
 
@@ -46,17 +46,30 @@ export interface ProviderPreset {
   baseUrl: string
   models: string[]
   note?: string
+  /** 该提供商当前模型的官方文档地址，供界面「查看最新模型」使用 */
+  docsUrl?: string
 }
 
-/** 提供商预设：选中后自动填 baseUrl（spec §7） */
-export const PROVIDER_PRESETS: ProviderPreset[] = [
-  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', models: ['deepseek-chat', 'deepseek-reasoner'] },
-  { id: 'zhipu', name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4.5', 'glm-4.5-flash', 'glm-4-long'] },
-  { id: 'moonshot', name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'] },
-  { id: 'siliconflow', name: 'SiliconFlow 硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct'] },
-  { id: 'ollama', name: 'Ollama（本机）', baseUrl: 'http://localhost:11434/v1', models: [], note: '无需 API Key' },
+/**
+ * 提供商预设的**兜底**默认值：选中后自动填 baseUrl（spec §7）。
+ *
+ * 真正的运行时预设来自 `resources/ai-providers.json`（随版本分发）或用户数据目录下的
+ * `ai-providers.json`（自动刷新模型列表后写入），见 `electron/store/provider-presets.ts`。
+ * 这里的常量仅在该两份文件都缺失或损坏时使用，保证应用仍能启动。
+ *
+ * 模型名会随服务商迭代下线，修改预设请改 resources/ai-providers.json，不必改动此文件。
+ */
+export const DEFAULT_PROVIDER_PRESETS: ProviderPreset[] = [
+  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', models: ['deepseek-flash', 'deepseek-v4-pro'], docsUrl: 'https://api-docs.deepseek.com/quick_start/pricing' },
+  { id: 'zhipu', name: '智谱 GLM', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-5.3', 'glm-5.3-flash', 'glm-5.2'], docsUrl: 'https://docs.bigmodel.cn/cn/guide/start/model-overview' },
+  { id: 'moonshot', name: 'Moonshot Kimi', baseUrl: 'https://api.moonshot.cn/v1', models: ['kimi-k3', 'kimi-k2.7-code', 'kimi-k2.6'], docsUrl: 'https://platform.kimi.com/docs/models' },
+  { id: 'siliconflow', name: 'SiliconFlow 硅基流动', baseUrl: 'https://api.siliconflow.cn/v1', models: ['deepseek-ai/DeepSeek-V4.1-Flash', 'deepseek-ai/DeepSeek-V3.2', 'zai-org/GLM-5.3'], docsUrl: 'https://www.siliconflow.cn/pricing' },
+  { id: 'ollama', name: 'Ollama（本机）', baseUrl: 'http://localhost:11434/v1', models: [], note: '无需 API Key', docsUrl: 'https://ollama.com/library' },
   { id: 'custom', name: '自定义', baseUrl: '', models: [] }
 ]
+
+/** 兼容旧引用；等于 DEFAULT_PROVIDER_PRESETS，新代码请用 loadProviderPresets() */
+export const PROVIDER_PRESETS: ProviderPreset[] = DEFAULT_PROVIDER_PRESETS
 
 export const PROFILE_KEYS = ['name', 'preferredName', 'identity', 'location', 'bio', 'goals', 'interests'] as const
 export type ProfileKey = (typeof PROFILE_KEYS)[number]
@@ -91,7 +104,7 @@ export interface LinkedAccount extends ProviderIdentity {
 }
 
 /** 平台元信息：由主进程提供，渲染层只负责展示 */
-export interface IdentityProviderOption {
+interface IdentityProviderOption {
   id: IdentityProvider
   label: string
   /** 官方令牌创建页，界面按钮直接打开 */
@@ -183,6 +196,26 @@ export interface TimelineFilter {
   showHidden?: boolean
 }
 
+/** 时间线合并行：record_type 区分记录条目与知识库操作流水。 */
+export interface TimelineRow {
+  record_type: 'entry' | 'knowledge'
+  id: number
+  event_date: string
+  event_time: string | null
+  created_at: string
+  hidden_scope: string | null
+  raw_text: string | null
+  kind: string | null
+  content: string | null
+  confidence: number | null
+  source: string | null
+  item_id: number | null
+  folder_id: number | null
+  action: string | null
+  item_title: string | null
+  detail: string | null
+}
+
 /**
  * 时间线隐去范围：只改变可见性，内容一律原样保留。
  * all 为默认选择，真正意义上「抹除这件事的存在」但仍可恢复。
@@ -195,6 +228,35 @@ export const HIDE_SCOPE_LABELS: Record<HideScope, string> = {
   all: '所有回溯视图都隐去（时间线、搜索、报告与趋势）',
   listing: '隐去时间线与搜索，报告与趋势仍统计',
   timeline: '仅时间线列表隐去，搜索与统计仍算'
+}
+
+/** 知识库文件夹与资料的共享数据契约。 */
+export interface KbFolder {
+  id: number
+  name: string
+  description: string
+  system_key: string | null
+  created_at: string
+  sort_order: number | null
+  tags: string[]
+}
+
+export interface KbItem {
+  id: number
+  folder_id: number
+  title: string
+  source_type: string // markdown | docx | pptx | xlsx | html | text
+  body: string
+  file_path: string
+  reason: string
+  reflection: string
+  ai_summary: string
+  source_entry_id: number | null
+  import_key: string | null
+  created_at: string
+  updated_at: string
+  title_locked: number | null
+  tags: string[]
 }
 
 /** 知识库操作类型；与 kb_events 的 CHECK 约束保持一致 */

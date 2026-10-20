@@ -3,7 +3,7 @@
  * 长条目按句界切成带重叠的语义块，分别向量化，消除单向量语义稀释。
  */
 
-export interface Chunk {
+interface Chunk {
   text: string
   start: number // 块在原文中的起始偏移
 }

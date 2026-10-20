@@ -2,6 +2,14 @@
 
 本文件是仓库级强制说明。任何 AI 或自动化代理开始修改前，都必须先阅读本文件并核对当前 Git 状态。
 
+## 分支硬约束（2026-10-14 用户明确指定）
+
+- AI 或自动化代理只允许在 `architecture-governance` 分支进行修改。修改文件、暂存、提交或执行回滚前，必须用 `git branch --show-current` 确认当前分支；结果不完全等于 `architecture-governance` 时立即停止写入，不得自行换分支继续。
+- 任何时候都禁止切换到 `main`，禁止修改本地或任何远端的 `main` 分支。不得向 `main` 提交、合并、变基、拣选提交、重置、强制更新、推送、删除或重建；不得合并或启用自动合并目标为 `main` 的 Pull Request。
+- 不得通过其他 worktree、其他克隆、Git 引用命令、远端 API 或自动化流程绕过上述限制。发布、收尾、同步、回滚、测试通过或波次获批均不构成例外。
+- `main` 仅可用于只读比较。收尾应停留在 `architecture-governance`，不得将改动集成到 `main`。下面关于稳定集成、发布及其他长期分支的说明，不构成 AI 操作这些分支的授权。
+- 当前 `architecture-governance` 的上游为 `origin/main`；禁止不指定目标的 `git push`、`git push --all` 或 `git push --mirror`，避免误推主分支。未来若获准推送本分支，必须显式指定 `HEAD:refs/heads/architecture-governance`，不得以 `main` 为目标。
+
 ## 分支职责
 
 - `main` 是稳定集成与版本发布分支。功能开发、重构和体验优化不得直接在 `main` 上进行，应通过独立分支和 Pull Request 合并。
@@ -80,6 +88,16 @@ feat: update MeView and labs
 修改生活趋势代码
 修复若干问题
 ```
+
+## 架构结构基线（新代码落位规则）
+
+仓库在 `docs/superpowers/architecture/` 目录保存架构治理的结构基线，回答“新增的代码应该放在哪里、什么时候允许导出或删除”。
+
+- 该目录的入口是 `docs/superpowers/architecture/README.md`，规则主体是 `docs/superpowers/architecture/structure-baseline.md`；动手新增共享类型、渲染层工具、IPC 域或大型页面逻辑前，必须先读这两份文件。
+- 该目录是结构决策的**唯一权威出处**。开始任何结构治理或新增模块前，先按其中“新代码落位速查表”确定落位，不要凭目录名或习惯猜测。
+- 其中记录的四项明确保留例外（`resetContext`、`AccountSummary`、`GenerateReportResult`、`SleepContent`）不得删除；扫描无引用不构成删除依据。
+- 若实际代码与该基线冲突，以代码事实为准，并先向用户报告差异，再通过单独批准的波次更新基线；AI 不得自行放宽或改写基线规则。
+- 修改该目录属于治理改动，必须先在 `architecture-governance` 分支完成并单独获批；不得与业务功能改动混在同一提交。
 
 ## 仓库卫生
 

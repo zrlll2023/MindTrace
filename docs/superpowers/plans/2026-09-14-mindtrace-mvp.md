@@ -1,5 +1,18 @@
 # MindTrace MVP 实施计划
 
+> ## ⚠️ 当前状态说明（2026-10-20 添加，阅读前必看）
+>
+> **这是一份已完成的历史执行计划，不是待办任务清单。** 计划中的 MVP 功能已全部落地并有测试覆盖，本文件保留用于追溯当时的架构决策依据。
+>
+> - **43 个未勾选的 `- [ ]` 不代表未完成。** 当时采用纯文本步骤而非复选框跟踪，任务完成后没有回填勾选状态。判断完成度请看代码与测试，不要看勾选框。
+> - **3 个被引用的路径已不存在**，属于实施过程中演进的正常结果，不要据此认为计划未执行：
+>   - `electron/db/schema.ts` → DDL 现已内联在 `electron/db/connection.ts`
+>   - `src/components/EntryDetail.vue` → 已并入 `src/views/TimelineView.vue` 的详情逻辑
+>   - `src/components/ReportViewer.vue` → 已并入 `src/views/ReportsView.vue`
+> - **Node 版本已变更**：本计划第 22 行写的 `Node v26` 是当时的规划值；当前验证基线为 **Node v22.12.0**（`nvm use 22.12.0`）。以 `package.json` 与 CI 实际配置为准。
+> - **仍然有效的内容**：下方 `Global Constraints` 全部继续生效（禁用原生模块、`entries.raw_text` 永不修改、API Key 用 `safeStorage` 加密、`contextIsolation: true`），`docs/superpowers/architecture/structure-baseline.md` 仍以其为依据之一。
+> - **代码落位规则请查新基线**：`docs/superpowers/architecture/structure-baseline.md`，本计划不描述「新代码该放哪」。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 构建 MindTrace MVP——本地优先的 Electron 桌面应用：聊天框录入生活数据，AI 解析归档，生成日报/周报并可导出 Markdown。

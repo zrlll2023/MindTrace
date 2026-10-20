@@ -29,7 +29,9 @@ const api = {
     undoDataMigration: () => ipcRenderer.invoke('settings:undoDataMigration'),
     restoreDefaultDataDir: () => ipcRenderer.invoke('settings:restoreDefaultDataDir'),
     restart: () => ipcRenderer.invoke('settings:restart'),
-    getPresets: () => ipcRenderer.invoke('settings:getPresets')
+    getPresets: () => ipcRenderer.invoke('settings:getPresets'),
+    refreshModels: (providerId: string, baseUrl?: string, apiKey?: string) =>
+      ipcRenderer.invoke('settings:refreshModels', providerId, baseUrl, apiKey)
   },
   llm: {
     listModels: (baseUrl?: string, apiKey?: string) =>

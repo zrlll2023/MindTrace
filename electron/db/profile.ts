@@ -1,8 +1,8 @@
 import { Database } from 'sql.js'
 import { PROFILE_KEYS, ProfileKey, ProfileValues } from '../types'
 
-export interface ProfileField { value: string; source: 'manual' | 'ai' }
-export type ProfileRecord = Partial<Record<ProfileKey, ProfileField>>
+interface ProfileField { value: string; source: 'manual' | 'ai' }
+type ProfileRecord = Partial<Record<ProfileKey, ProfileField>>
 
 export class ProfileStore {
   constructor(private db: Database) {}

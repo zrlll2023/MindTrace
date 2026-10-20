@@ -1,17 +1,18 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { KbItem, KnowledgeBase } from '../db/knowledge'
+import { KnowledgeBase } from '../db/knowledge'
+import type { KbItem } from '../types'
 import { extractText, unzipOffice } from '../import/office'
 import { localizeMarkdownImages } from './assets'
 
 const SUPPORTED_EXTENSIONS = new Set(['md', 'markdown', 'txt', 'html', 'htm', 'docx', 'pptx', 'xlsx'])
 
-export interface KnowledgeImportFailure {
+interface KnowledgeImportFailure {
   fileName: string
   error: string
 }
 
-export interface KnowledgeImportResult {
+interface KnowledgeImportResult {
   items: KbItem[]
   failures: KnowledgeImportFailure[]
 }

@@ -1,13 +1,13 @@
 import { validateEntryMoment } from './analysis/validators'
 
-export interface EntryMoment {
+interface EntryMoment {
   /** YYYY-MM-DD */
   entryDate: string
   /** HH:mm；null 表示用户未标记具体时间 */
   entryTime: string | null
 }
 
-export type MomentInput = { entryDate?: string; entryTime?: string | null } | null | undefined
+type MomentInput = { entryDate?: string; entryTime?: string | null } | null | undefined
 
 /**
  * 计算一条记录修正后的「发生于」时间。

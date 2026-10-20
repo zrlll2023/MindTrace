@@ -1,0 +1,49 @@
+{
+  "$schemaVersion": 1,
+  "updatedAt": "2026-10-20",
+  "note": "AI 提供商预设。服务商会下线旧模型，此文件可随版本更新替换，无需重新发版。用户仍可在界面手动填写模型名或点「刷新账户可用模型」拉取实时列表。",
+  "presets": [
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "baseUrl": "https://api.deepseek.com",
+      "models": ["deepseek-flash", "deepseek-v4-pro"],
+      "docsUrl": "https://api-docs.deepseek.com/quick_start/pricing"
+    },
+    {
+      "id": "zhipu",
+      "name": "智谱 GLM",
+      "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+      "models": ["glm-5.3", "glm-5.3-flash", "glm-5.2"],
+      "docsUrl": "https://docs.bigmodel.cn/cn/guide/start/model-overview"
+    },
+    {
+      "id": "moonshot",
+      "name": "Moonshot Kimi",
+      "baseUrl": "https://api.moonshot.cn/v1",
+      "models": ["kimi-k3", "kimi-k2.7-code", "kimi-k2.6"],
+      "docsUrl": "https://platform.kimi.com/docs/models"
+    },
+    {
+      "id": "siliconflow",
+      "name": "SiliconFlow 硅基流动",
+      "baseUrl": "https://api.siliconflow.cn/v1",
+      "models": ["deepseek-ai/DeepSeek-V4.1-Flash", "deepseek-ai/DeepSeek-V3.2", "zai-org/GLM-5.3"],
+      "docsUrl": "https://www.siliconflow.cn/pricing"
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama（本机）",
+      "baseUrl": "http://localhost:11434/v1",
+      "models": [],
+      "note": "无需 API Key",
+      "docsUrl": "https://ollama.com/library"
+    },
+    {
+      "id": "custom",
+      "name": "自定义",
+      "baseUrl": "",
+      "models": []
+    }
+  ]
+}
